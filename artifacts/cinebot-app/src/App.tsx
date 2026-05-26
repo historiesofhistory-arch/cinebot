@@ -1127,15 +1127,11 @@ export default function App() {
   }, [tmdbId, type, isTV]);
 
   // ── Cycle through all players ─────────────────────────────────────────────
-  // 0 = SP (kayel415jek.com)  →  1 = sflix.film  →  VidLink (vidstack mode)
+  // 0 = SP (kayel415jek.com)  →  VidLink (vidstack mode)
 
   const switchPlayer = useCallback((season: number, episode: number) => {
-    if (iframePlayerIdx === 0) {
-      switchToSflix(season, episode);
-    } else {
-      switchToVidstack(season, episode);
-    }
-  }, [iframePlayerIdx, switchToSflix, switchToVidstack]);
+    switchToVidstack(season, episode);
+  }, [switchToVidstack]);
 
   // ── Load stream ──────────────────────────────────────────────────────────
 
@@ -1144,55 +1140,37 @@ export default function App() {
     setIframeSrc(''); setHlsSrc(''); setDirectSrc('');
     setP2pActive(false);
     vidlinkUrlRef.current = '';
-    setPlayerMode('vidstack');
+    setPlayerMode('iframe');
     setIframePlayerIdx(0);
 
-    // Primary: VidLink HLS (most reliable)
-    const scraperUrl = await resolveScraperStream({
-      tmdbId, type,
-      season:  isTV ? season  : undefined,
-      episode: isTV ? episode : undefined,
-    });
-    if (scraperUrl) {
-      vidlinkUrlRef.current = scraperUrl;
-      setHlsSrc(scraperUrl);
-      setPlayerMode('vidstack');
+    const iSrc = buildIframeSrc(season, episode);
+
+    if (iSrc) {
+      // Primary: SP iframe — show immediately
+      setIframeSrc(iSrc);
       setAppMode('playing');
+
+      // Background: pre-fetch VidLink so it's ready if user switches
+      resolveVidLink({
+        tmdbId, type,
+        season:  isTV ? season  : undefined,
+        episode: isTV ? episode : undefined,
+      }).then(url => {
+        if (url) vidlinkUrlRef.current = url;
+      }).catch(() => {});
     } else {
+      // No IMDB ID — go straight to VidLink
       const url = await resolveVidLink({
         tmdbId, type,
         season:  isTV ? season  : undefined,
         episode: isTV ? episode : undefined,
       });
       if (url) {
-        vidlinkUrlRef.current = url;
         setHlsSrc(url);
         setPlayerMode('vidstack');
         setAppMode('playing');
       } else {
-        // Fallback: sflix iframe
-        const sflixUrl = await resolveSflixUrl({
-          title, type,
-          season:  isTV ? season  : undefined,
-          episode: isTV ? episode : undefined,
-        });
-        if (sflixUrl) {
-          setIframePlayerIdx(1);
-          setIframeSrc(sflixUrl);
-          setPlayerMode('iframe');
-          setAppMode('playing');
-        } else {
-          // Last resort: SP iframe
-          const iSrc = buildIframeSrc(season, episode);
-          if (iSrc) {
-            setIframePlayerIdx(0);
-            setIframeSrc(iSrc);
-            setPlayerMode('iframe');
-            setAppMode('playing');
-          } else {
-            setAppMode('error');
-          }
-        }
+        setAppMode('error');
       }
     }
 
@@ -1222,7 +1200,7 @@ export default function App() {
         setCanP2P(true);
       }).catch(() => {});
     }
-  }, [tmdbId, type, imdbId, isTV, title, buildIframeSrc]);
+  }, [tmdbId, type, imdbId, isTV, buildIframeSrc]);
 
   useEffect(() => { load(initSeason, initEpisode); }, []);
 
@@ -1300,7 +1278,7 @@ export default function App() {
 
   // Iframe player works fine in portrait — skip the rotation gate for it
   if (playerMode === 'iframe' && iframeSrc) {
-    const nextPlayerLabel = iframePlayerIdx === 0 ? 'Try Player 2' : 'Try Player 3';
+    const nextPlayerLabel = 'Try VidLink';
     return (
       <IframePlayer
         src={iframeSrc}
