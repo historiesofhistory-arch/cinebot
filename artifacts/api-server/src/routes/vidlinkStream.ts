@@ -57,7 +57,7 @@ function bootWasm(): Promise<void> {
 
     const go = new (globalThis as any).Dm();
     const wasmBuf = readFileSync(path.join(ASSETS_DIR, "fu.wasm"));
-    const { instance } = await WebAssembly.instantiate(wasmBuf, go.importObject);
+    const { instance } = await (globalThis as any).WebAssembly.instantiate(wasmBuf, go.importObject);
     go.run(instance);
 
     // Give the WASM a moment to initialise

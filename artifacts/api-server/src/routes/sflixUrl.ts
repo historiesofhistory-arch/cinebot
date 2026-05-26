@@ -50,7 +50,7 @@ router.get("/sflix-url", async (req, res) => {
       return res.status(502).json({ error: "sflix search failed" });
     }
 
-    const data = await searchRes.json();
+    const data = await searchRes.json() as any;
     const items: any[] = data?.data?.items ?? [];
     if (!items.length) {
       return res.status(404).json({ error: "not found on sflix" });
