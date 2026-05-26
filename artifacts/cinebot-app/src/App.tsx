@@ -255,6 +255,18 @@ function IframePlayer({
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const overlayTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const goFullscreenLandscape = useCallback(async () => {
+    const tg = (window as any).Telegram?.WebApp;
+    try { tg?.requestFullscreen?.(); } catch (_) {}
+    try { tg?.lockOrientation?.(); } catch (_) {}
+    try {
+      const el = document.documentElement;
+      if (el.requestFullscreen) await el.requestFullscreen({ navigationUI: 'hide' });
+      else if ((el as any).webkitRequestFullscreen) (el as any).webkitRequestFullscreen();
+    } catch (_) {}
+    try { await (screen.orientation as any).lock?.('landscape'); } catch (_) {}
+  }, []);
+
   const showControls = useCallback(() => {
     setControlsVisible(true);
     if (hideTimer.current) clearTimeout(hideTimer.current);
@@ -360,15 +372,20 @@ function IframePlayer({
           )}
         </div>
         <button
-          onClick={onSwitchPlayer}
+          onClick={goFullscreenLandscape}
           style={{
             padding: '6px 12px', background: 'rgba(255,255,255,0.12)',
             color: '#fff', border: '1px solid rgba(255,255,255,0.2)',
             borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer',
-            whiteSpace: 'nowrap', flexShrink: 0,
+            whiteSpace: 'nowrap', flexShrink: 0, display: 'flex',
+            alignItems: 'center', gap: 5,
           }}
         >
-          {playerLabel}
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
+            <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+          </svg>
+          Fullscreen
         </button>
       </div>
 
