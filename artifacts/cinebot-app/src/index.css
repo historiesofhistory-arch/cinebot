@@ -1,0 +1,373 @@
+@import "tailwindcss";
+
+/* ── Vidstack theme — Cinema dark skin ────────────────────────────── */
+:root {
+  --media-primary-color:   #e50914;
+  --media-brand:           #e50914;
+  --media-focus-ring-color: rgba(229,9,20,0.45);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* Use fixed + inset:0 so rotating to landscape fills correctly on all mobile browsers */
+html, body, #root {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #000;
+  color: #fff;
+  font-family: 'Netflix Sans', Inter, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* ── Vidstack player fills the viewport ───────────────────────────── */
+.cine-media-player {
+  position: fixed !important;
+  inset: 0 !important;
+  width:  100% !important;
+  height: 100% !important;
+  background: #000;
+}
+
+/* The inner media-provider must fill the player at all times */
+.cine-media-player [data-media-provider] {
+  position: absolute !important;
+  inset: 0 !important;
+  width:  100% !important;
+  height: 100% !important;
+  aspect-ratio: unset !important;
+}
+
+/* Video element fills its provider container; object-fit handles letterboxing */
+.cine-media-player video {
+  position: absolute !important;
+  inset: 0 !important;
+  width:  100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
+}
+
+/* Ensure fullscreen mode never clips the top — override any remaining constraints */
+.cine-media-player[data-fullscreen] [data-media-provider],
+.cine-media-player[data-fullscreen] video {
+  position: absolute !important;
+  inset: 0 !important;
+  width:  100% !important;
+  height: 100% !important;
+  aspect-ratio: unset !important;
+}
+
+/* ── Vidstack controls layout ──────────────────────────────────────── */
+
+/* Give the progress bar a bigger thumb so it's easy to grab on touch screens */
+.cine-media-player {
+  --media-slider-thumb-size:        18px;
+  --media-slider-track-height:      4px;
+  --media-slider-focused-track-height: 5px;
+}
+
+/* Controls safe-area padding on all orientations */
+.cine-media-player .vds-controls {
+  --media-controls-padding: 0 14px max(16px, env(safe-area-inset-bottom)) 14px;
+}
+
+/* Portrait phone: make controls bigger and more thumb-friendly */
+@media (orientation: portrait) and (max-width: 600px) {
+  .cine-media-player {
+    --media-slider-thumb-size:        22px;
+    --media-slider-track-height:      5px;
+    --media-slider-focused-track-height: 7px;
+  }
+
+  /* Expand the invisible touch-target around the progress bar */
+  .cine-media-player .vds-time-slider {
+    padding-block: 10px;
+  }
+
+  /* Bottom controls group: extra breathing room above safe area */
+  .cine-media-player .vds-controls {
+    --media-controls-padding: 0 12px max(20px, env(safe-area-inset-bottom)) 12px;
+  }
+
+  /* Hide volume slider on portrait mobile — users use device volume buttons */
+  .cine-media-player .vds-volume-slider {
+    display: none !important;
+  }
+}
+
+/* Landscape phone: tighten up to leave maximum screen for video */
+@media (orientation: landscape) and (max-height: 500px) {
+  .cine-media-player .vds-controls {
+    --media-controls-padding: 0 16px max(6px, env(safe-area-inset-bottom)) 16px;
+  }
+}
+
+/* Hide native video controls (overridden by Vidstack) */
+video::-webkit-media-controls { display: none !important; }
+video { display: block; }
+
+/* ── Keyframes ─────────────────────────────────────────────────────── */
+@keyframes spin       { to { transform: rotate(360deg); } }
+@keyframes pulse      { 0%,100%{opacity:1} 50%{opacity:.35} }
+@keyframes fade-in    { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slide-up   { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes ep-overlay-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ep-panel-in   { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+@keyframes portrait-phone {
+  0%   { transform: rotate(0deg); }
+  30%  { transform: rotate(-90deg); }
+  70%  { transform: rotate(-90deg); }
+  100% { transform: rotate(0deg); }
+}
+
+/* ── Portrait-mode overlay ─────────────────────────────────────────── */
+.cine-portrait-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  z-index: 9999;
+  overflow: hidden;
+}
+
+.cine-portrait-bg {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  filter: blur(28px) brightness(0.18);
+  transform: scale(1.08);
+}
+
+.cine-portrait-content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 32px 24px;
+  text-align: center;
+  max-width: 340px;
+}
+
+.cine-portrait-poster {
+  width: 100px;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.7);
+}
+
+.cine-portrait-phone {
+  font-size: 56px;
+  line-height: 1;
+  animation: portrait-phone 2.4s ease-in-out infinite;
+  display: inline-block;
+}
+
+.cine-portrait-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.3;
+}
+
+.cine-portrait-hint {
+  font-size: 14px;
+  color: rgba(255,255,255,0.65);
+  line-height: 1.5;
+}
+
+.cine-portrait-btn {
+  margin-top: 8px;
+  padding: 12px 32px;
+  background: #e50914;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.3px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.cine-portrait-btn:active {
+  opacity: 0.82;
+}
+
+/* ── Loading skeleton shimmer ──────────────────────────────────────── */
+.cine-skeleton {
+  background: linear-gradient(90deg,
+    rgba(255,255,255,0.05) 25%,
+    rgba(255,255,255,0.1) 50%,
+    rgba(255,255,255,0.05) 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.8s infinite;
+}
+
+/* ── Episode panel animations ─────────────────────────────────────── */
+.cine-ep-overlay {
+  animation: ep-overlay-in 0.22s ease;
+}
+.cine-ep-panel {
+  animation: ep-panel-in 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Episode list item hover states */
+.cine-ep-item {
+  transition: background 0.15s ease;
+}
+.cine-ep-item:hover {
+  background: rgba(255,255,255,0.06) !important;
+}
+.cine-ep-item:active {
+  background: rgba(255,255,255,0.09) !important;
+}
+
+/* Season item hover */
+.cine-season-item {
+  transition: background 0.15s ease;
+}
+.cine-season-item:hover {
+  background: rgba(255,255,255,0.06) !important;
+}
+
+/* ── Loading & Error screens ──────────────────────────────────────── */
+.cine-fullscreen {
+  position: fixed; inset: 0;
+  background: #000; display: flex;
+  flex-direction: column; align-items: center;
+  justify-content: center; overflow: hidden;
+}
+.cine-vignette {
+  position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.75) 100%);
+}
+.cine-loading-poster {
+  width: 90px; height: 135px; border-radius: 10px; overflow: hidden; flex-shrink: 0;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.08);
+}
+.cine-loading-poster img {
+  width: 100%; height: 100%; object-fit: cover; display: block;
+}
+.cine-spinner {
+  width: 36px; height: 36px;
+  border: 2.5px solid rgba(255,255,255,0.1);
+  border-top-color: #e50914;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.cine-spinner-sm {
+  width: 28px; height: 28px;
+  border: 2px solid rgba(255,255,255,0.08);
+  border-top-color: #e50914;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.cine-error-icon {
+  width: 60px; height: 60px; border-radius: 50%;
+  background: rgba(229,9,20,0.12);
+  border: 1.5px solid rgba(229,9,20,0.35);
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* ── Player — top bar ─────────────────────────────────────────────── */
+.cine-top-bar {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 25;
+  display: flex; align-items: center; gap: 8px;
+  padding: max(12px, env(safe-area-inset-top)) 14px 28px;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.5) 60%, transparent 100%);
+  transition: opacity 0.3s ease;
+}
+.cine-mini-poster {
+  width: 26px; height: 38px; border-radius: 4px; overflow: hidden; flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.6);
+  border: 1px solid rgba(255,255,255,0.1);
+  pointer-events: none;
+}
+.cine-mini-poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cine-title-block { flex: 1; min-width: 0; pointer-events: none; }
+.cine-title-main {
+  font-weight: 700; font-size: 13px; color: #fff;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  line-height: 1.3;
+}
+.cine-title-sub { font-size: 11px; color: rgba(255,255,255,0.5); margin-top: 1px; font-weight: 500; }
+
+/* ── Episode panel header ─────────────────────────────────────────── */
+.cine-ep-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 16px 16px 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+  flex-shrink: 0;
+}
+.cine-ep-header-btn {
+  width: 32px; height: 32px;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px; color: #fff; font-size: 18px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.cine-ep-header-title { font-weight: 700; font-size: 15px; color: #fff; flex: 1; letter-spacing: 0.1px; }
+
+/* ── Audio dropdown ───────────────────────────────────────────────── */
+.cine-audio-menu {
+  position: absolute; top: 64px; right: 14px; z-index: 30;
+  background: rgba(10,10,12,0.98); border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.1);
+  overflow: hidden; min-width: 160px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.8);
+}
+.cine-audio-menu-label {
+  padding: 9px 14px 6px; font-size: 10px; font-weight: 700;
+  color: rgba(255,255,255,0.35); letter-spacing: 1.2px; text-transform: uppercase;
+}
+
+/* ── Top bar button hover states ──────────────────────────────────── */
+.cine-top-btn {
+  transition: background 0.15s ease, transform 0.12s ease !important;
+}
+.cine-top-btn:hover {
+  background: rgba(255,255,255,0.18) !important;
+  transform: scale(1.05);
+}
+.cine-top-btn:active {
+  transform: scale(0.97);
+}
+.cine-top-btn-red {
+  transition: background 0.15s ease, transform 0.12s ease !important;
+}
+.cine-top-btn-red:hover {
+  background: rgba(229,9,20,1) !important;
+  transform: scale(1.05);
+}
+
+/* ── Loading screen content animations ─────────────────────────────── */
+.cine-loading-content {
+  animation: slide-up 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ── Scrollbar ─────────────────────────────────────────────────────── */
+::-webkit-scrollbar        { width: 4px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: rgba(255,255,255,0.18); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.28); }
+
+/* Ensure buttons have no tap highlight */
+button { -webkit-tap-highlight-color: transparent; outline: none; }
+
+/* When the media-player element is the fullscreen element, ensure it fills the screen */
+.cine-media-player:fullscreen,
+.cine-media-player:-webkit-full-screen,
+.cine-media-player:-moz-full-screen {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  background: #000 !important;
+}

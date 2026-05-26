@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/cinebot-app/"
+title = "CineBot Player"
+version = "1.0.0"
+id = "artifacts/cinebot-app"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/cinebot-app/" ]
+localPort = 23175
+
+[services.development]
+run = "pnpm --filter @workspace/cinebot-app run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/cinebot-app", "run", "build" ]
+publicDir = "artifacts/cinebot-app/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23175"
+BASE_PATH = "/cinebot-app/"

@@ -1,0 +1,23 @@
+services:
+  # ── Single service: API server + player frontend + Telegram bot ────────────
+  - type: web
+    name: cinebot-api
+    runtime: docker
+    dockerfilePath: Dockerfile
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TMDB_API_KEY
+        sync: false
+      # The bot uses this URL to generate watch links — set to this service's URL
+      # e.g. https://he-g1m4.onrender.com
+      - key: PLAYER_URL
+        sync: false
+    healthCheckPath: /api/health
+    autoDeploy: false

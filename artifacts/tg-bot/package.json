@@ -1,0 +1,15 @@
+{
+  "name": "@workspace/tg-bot",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file=../../.env src/bot.mjs 2>&1 || node src/bot.mjs",
+    "start": "node src/bot.mjs"
+  },
+  "dependencies": {
+    "@grammyjs/runner": "^2.0.3",
+    "grammy": "^1.41.1",
+    "node-fetch": "^3.3.2"
+  }
+}

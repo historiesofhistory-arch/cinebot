@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
+    iframe {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      border: none; display: block;
+    }
+  </style>
+</head>
+<body>
+  <!--
+    This page is loaded inside a sandboxed outer iframe that has NO
+    allow-top-navigation and NO allow-popups.
+
+    Per HTML spec §8.3.3, any page nested inside a sandboxed frame that
+    lacks allow-top-navigation CANNOT navigate window.top — even if the
+    nested page's own iframe has no sandbox attribute.
+
+    Result: the streaming site runs fully unrestricted in its own origin
+    (so its API calls and video streams work normally), but any redirect
+    or popup attempt is silently blocked by the browser at the security
+    boundary of the outer sandbox.
+  -->
+  <iframe
+    id="stream"
+    src="about:blank"
+    allowfullscreen
+    allow="autoplay; fullscreen; encrypted-media; picture-in-picture; gyroscope; accelerometer; clipboard-write"
+  ></iframe>
+
+  <script>
+    var streamFrame = document.getElementById('stream');
+
+    // Load the streaming URL directly so the site runs in its own origin.
+    // This means its API calls, video CDN requests, and player scripts all
+    // work normally — no CORS issues, no "media unavailable" errors.
+    window.addEventListener('message', function(e) {
+      if (!e.data || e.data.type !== 'CINEBOT_SET_SRC') return;
+      var url = e.data.url || '';
+      if (!url) return;
+      streamFrame.src = url;
+    });
+
+    // Tell the parent app when the stream iframe has loaded
+    streamFrame.addEventListener('load', function() {
+      try { window.parent.postMessage({ type: 'CINEBOT_FRAME_LOAD' }, '*'); } catch(ex) {}
+    });
+
+    // Block popups at this level too (belt-and-suspenders)
+    window.open = function() { return { focus: function(){} }; };
+  </script>
+</body>
+</html>
