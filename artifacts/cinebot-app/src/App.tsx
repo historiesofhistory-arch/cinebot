@@ -1064,8 +1064,8 @@ export default function App() {
     const prefix = isTV ? 's' : 'f';
     let direct = `https://gemma416okl.com/play/${prefix}${imdbId}?d=allmovielandapp.app`;
     if (isTV) direct += `&s=${season}&e=${episode}`;
-    // Route through proxy so we can detect "Video Not Found" via postMessage
-    return `${API_BASE}/sp-proxy?url=${encodeURIComponent(direct)}`;
+    // Load directly from user's browser — server proxy blocks streaming sites
+    return direct;
   }, [imdbId, isTV]);
 
   // ── Switch to sflix (2nd fallback iframe) ────────────────────────────────
