@@ -1144,52 +1144,56 @@ export default function App() {
     setIframeSrc(''); setHlsSrc(''); setDirectSrc('');
     setP2pActive(false);
     vidlinkUrlRef.current = '';
-    setPlayerMode('iframe');
-    setIframePlayerIdx(0); // always start at SP on fresh load
+    setPlayerMode('vidstack');
+    setIframePlayerIdx(0);
 
-    const iSrc = buildIframeSrc(season, episode);
-
-    if (iSrc) {
-      // Primary: iframe player — show immediately, no waiting
-      setIframeSrc(iSrc);
+    // Primary: VidLink HLS (most reliable)
+    const scraperUrl = await resolveScraperStream({
+      tmdbId, type,
+      season:  isTV ? season  : undefined,
+      episode: isTV ? episode : undefined,
+    });
+    if (scraperUrl) {
+      vidlinkUrlRef.current = scraperUrl;
+      setHlsSrc(scraperUrl);
+      setPlayerMode('vidstack');
       setAppMode('playing');
-
-      // Background: pre-fetch VidLink so it's ready when user switches player
-      resolveVidLink({
-        tmdbId, type,
-        season:  isTV ? season  : undefined,
-        episode: isTV ? episode : undefined,
-      }).then(url => {
-        if (url) vidlinkUrlRef.current = url;
-      }).catch(() => {});
-
     } else {
-      // No IMDB ID — go straight to VidLink (second fallback) then scraper
       const url = await resolveVidLink({
         tmdbId, type,
         season:  isTV ? season  : undefined,
         episode: isTV ? episode : undefined,
       });
-
-      if (!url) {
-        const scraperUrl = await resolveScraperStream({
-          tmdbId, type,
+      if (url) {
+        vidlinkUrlRef.current = url;
+        setHlsSrc(url);
+        setPlayerMode('vidstack');
+        setAppMode('playing');
+      } else {
+        // Fallback: sflix iframe
+        const sflixUrl = await resolveSflixUrl({
+          title, type,
           season:  isTV ? season  : undefined,
           episode: isTV ? episode : undefined,
         });
-        if (scraperUrl) {
-          setHlsSrc(scraperUrl);
-          setPlayerMode('vidstack');
+        if (sflixUrl) {
+          setIframePlayerIdx(1);
+          setIframeSrc(sflixUrl);
+          setPlayerMode('iframe');
           setAppMode('playing');
-          return;
+        } else {
+          // Last resort: SP iframe
+          const iSrc = buildIframeSrc(season, episode);
+          if (iSrc) {
+            setIframePlayerIdx(0);
+            setIframeSrc(iSrc);
+            setPlayerMode('iframe');
+            setAppMode('playing');
+          } else {
+            setAppMode('error');
+          }
         }
-        setAppMode('error');
-        return;
       }
-
-      setHlsSrc(url);
-      setPlayerMode('vidstack');
-      setAppMode('playing');
     }
 
     // Background: RD override (switches to direct MP4 if available)
@@ -1218,7 +1222,7 @@ export default function App() {
         setCanP2P(true);
       }).catch(() => {});
     }
-  }, [tmdbId, type, imdbId, isTV, buildIframeSrc]);
+  }, [tmdbId, type, imdbId, isTV, title, buildIframeSrc]);
 
   useEffect(() => { load(initSeason, initEpisode); }, []);
 
