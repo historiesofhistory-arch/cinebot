@@ -3,7 +3,7 @@ import { logger } from "../lib/logger";
 
 const router = Router();
 
-const ALLOWED_HOST = "kayel415jek.com";
+const ALLOWED_HOST = "gemma416okl.com";
 
 const DETECT_SCRIPT = `<script>
 (function() {

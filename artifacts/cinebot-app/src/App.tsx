@@ -1062,7 +1062,7 @@ export default function App() {
   const buildIframeSrc = useCallback((season: number, episode: number): string | null => {
     if (!imdbId) return null;
     const prefix = isTV ? 's' : 'f';
-    let direct = `https://kayel415jek.com/play/${prefix}${imdbId}?d=allmovielandapp.app`;
+    let direct = `https://gemma416okl.com/play/${prefix}${imdbId}?d=allmovielandapp.app`;
     if (isTV) direct += `&s=${season}&e=${episode}`;
     // Route through proxy so we can detect "Video Not Found" via postMessage
     return `${API_BASE}/sp-proxy?url=${encodeURIComponent(direct)}`;
