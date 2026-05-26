@@ -230,6 +230,8 @@ interface IframePlayerProps {
   src: string;
   title: string;
   poster: string;
+  overview: string;
+  year: string;
   isTV: boolean;
   currentSeason: number;
   currentEpisode: number;
@@ -245,7 +247,7 @@ interface IframePlayerProps {
 }
 
 function IframePlayer({
-  src, title, poster, isTV, currentSeason, currentEpisode,
+  src, title, poster, overview, year, isTV, currentSeason, currentEpisode,
   hasNextEpisode, onNextEpisode, onOpenEpisodes,
   showEpisodePanel, tmdbId, onSelectEpisode, onCloseEpisodePanel,
   onSwitchPlayer, playerLabel,
@@ -271,6 +273,28 @@ function IframePlayer({
 
   // Reset splash when src changes (episode switch)
   useEffect(() => { setReady(false); }, [src]);
+
+  // Re-show splash if user exits fullscreen or rotates to portrait
+  useEffect(() => {
+    if (!ready) return;
+    const onFsChange = () => {
+      if (!document.fullscreenElement && !(document as any).webkitFullscreenElement) {
+        setReady(false);
+      }
+    };
+    const onOrient = () => {
+      const angle = screen.orientation?.angle ?? (window.orientation as number) ?? 0;
+      if (angle === 0 || angle === 180) setReady(false);
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    document.addEventListener('webkitfullscreenchange', onFsChange);
+    window.addEventListener('orientationchange', onOrient);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange);
+      document.removeEventListener('webkitfullscreenchange', onFsChange);
+      window.removeEventListener('orientationchange', onOrient);
+    };
+  }, [ready]);
 
   const showControls = useCallback(() => {
     setControlsVisible(true);
@@ -313,23 +337,33 @@ function IframePlayer({
             style={{ backgroundImage: `url(https://image.tmdb.org/t/p/w780${poster})` }}
           />
         )}
-        <div className="cine-portrait-content">
+        <div className="cine-splash-content">
           {poster && (
             <img
-              className="cine-portrait-poster"
+              className="cine-splash-poster"
               src={`https://image.tmdb.org/t/p/w342${poster}`}
               alt={title}
             />
           )}
-          {title ? <p className="cine-portrait-title">{title}</p> : null}
-          {isTV && (
-            <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: 13, margin: '0 0 4px' }}>
-              Season {currentSeason} · Episode {currentEpisode}
-            </p>
-          )}
-          <button className="cine-portrait-btn" onClick={goFullscreenLandscape}>
-            ⛶ Go Fullscreen
-          </button>
+          <div className="cine-splash-info">
+            {title ? <div className="cine-splash-title">{title}</div> : null}
+            <div className="cine-splash-meta">
+              {year && <span>{year}</span>}
+              {isTV && <span className="cine-splash-dot">·</span>}
+              {isTV && <span>S{currentSeason} · E{currentEpisode}</span>}
+            </div>
+            {overview ? <p className="cine-splash-overview">{overview}</p> : null}
+            <button className="cine-splash-btn" onClick={goFullscreenLandscape}>
+              <span className="cine-splash-play-wrap">
+                <span className="cine-splash-play-ring" />
+                <svg className="cine-splash-play-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                  <polygon points="5,3 19,12 5,21"/>
+                </svg>
+              </span>
+              Watch Fullscreen
+            </button>
+            <p className="cine-splash-hint">Rotates to landscape · Works best fullscreen</p>
+          </div>
         </div>
       </div>
     );
@@ -1035,9 +1069,11 @@ export default function App() {
   const p       = new URLSearchParams(window.location.search);
   const type    = p.get('type')    || 'movie';
   const tmdbId  = p.get('id')      || '';
-  const title   = p.get('title')   || '';
-  const poster  = p.get('poster')  || '';
-  const imdbId  = p.get('imdb')    || '';
+  const title    = p.get('title')    || '';
+  const poster   = p.get('poster')   || '';
+  const overview = p.get('overview') || '';
+  const year     = p.get('year')     || '';
+  const imdbId   = p.get('imdb')     || '';
   const initSeason  = parseInt(p.get('season')  || '1', 10);
   const initEpisode = parseInt(p.get('episode') || '1', 10);
 
@@ -1338,6 +1374,8 @@ export default function App() {
         src={iframeSrc}
         title={title}
         poster={poster}
+        overview={overview}
+        year={year}
         isTV={isTV}
         currentSeason={currentSeason}
         currentEpisode={currentEpisode}

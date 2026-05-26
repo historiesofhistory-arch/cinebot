@@ -153,12 +153,13 @@ function getBestRegion(providers) {
   return results.US || results.IN || Object.values(results)[0] || null;
 }
 
-function buildWatchButtons(mediaType, id, title, providers, trailerKey, tmdbUrl, { imdbId = '', poster = '', year = '' } = {}) {
+function buildWatchButtons(mediaType, id, title, providers, trailerKey, tmdbUrl, { imdbId = '', poster = '', year = '', overview = '' } = {}) {
   const buttons = [];
 
   const appParams = new URLSearchParams({
     type: mediaType, id: String(id), title,
     ...(year && { year }), ...(poster && { poster }), ...(imdbId && { imdb: imdbId }),
+    ...(overview && { overview: overview.slice(0, 150) }),
   });
   const appUrl = `${MINI_APP_BASE}?${appParams.toString()}`;
   buttons.push([{ text: '▶️  Watch Free — No Ads', url: appUrl }]);
@@ -558,6 +559,7 @@ bot.on('callback_query:data', async (ctx) => {
         imdbId: movie.imdb_id || '',
         poster: movie.poster_path || '',
         year: movie.release_date?.slice(0, 4) || '',
+        overview: movie.overview || '',
       });
       try { await bot.api.deleteMessage(chatId, waitMsg?.message_id); } catch (_) {}
       const imgUrl = movie.poster_path ? `${IMG_BASE}${movie.poster_path}` : null;
@@ -593,6 +595,7 @@ bot.on('callback_query:data', async (ctx) => {
         imdbId: externalIds?.imdb_id || '',
         poster: series.poster_path || '',
         year: series.first_air_date?.slice(0, 4) || '',
+        overview: series.overview || '',
       });
       try { await bot.api.deleteMessage(chatId, waitMsg?.message_id); } catch (_) {}
       const imgUrl = series.poster_path ? `${IMG_BASE}${series.poster_path}` : null;
