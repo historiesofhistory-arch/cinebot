@@ -253,9 +253,7 @@ function IframePlayer({
   onSwitchPlayer, playerLabel,
 }: IframePlayerProps) {
   const [ready, setReady] = useState(false);
-  const [controlsVisible, setControlsVisible] = useState(true);
   const [overlayVisible, setOverlayVisible] = useState(true);
-  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const overlayTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const goFullscreenLandscape = useCallback(async () => {
@@ -296,24 +294,12 @@ function IframePlayer({
     };
   }, [ready]);
 
-  const showControls = useCallback(() => {
-    setControlsVisible(true);
-    if (hideTimer.current) clearTimeout(hideTimer.current);
-    hideTimer.current = setTimeout(() => setControlsVisible(false), 3500);
-  }, []);
-
   // Hide the loading overlay after a fixed delay — only once iframe is loading
   useEffect(() => {
     if (!ready) return;
     setOverlayVisible(true);
-    showControls();
-    overlayTimer.current = setTimeout(() => {
-      setOverlayVisible(false);
-    }, 2000);
-    return () => {
-      if (hideTimer.current) clearTimeout(hideTimer.current);
-      if (overlayTimer.current) clearTimeout(overlayTimer.current);
-    };
+    overlayTimer.current = setTimeout(() => setOverlayVisible(false), 2500);
+    return () => { if (overlayTimer.current) clearTimeout(overlayTimer.current); };
   }, [src, ready]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-detect "Video Not Found" from proxied SP player and silently switch
@@ -370,143 +356,32 @@ function IframePlayer({
   }
 
   return (
-    <div
-      style={{
-        position: 'fixed', inset: 0,
-        background: '#000', overflow: 'hidden',
-        display: 'flex', flexDirection: 'column',
-      }}
-      onPointerMove={showControls}
-      onClick={showControls}
-    >
+    <div style={{ position: 'fixed', inset: 0, background: '#000', overflow: 'hidden' }}>
       <iframe
         src={src}
         allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
         allowFullScreen
         referrerPolicy="no-referrer"
-        style={{
-          position: 'absolute', inset: 0, width: '100%', height: '100%',
-          border: 'none', display: 'block',
-        }}
+        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 'none', display: 'block' }}
       />
 
-      {/* Loading overlay — shows while iframe buffers */}
+      {/* Brief loading overlay while iframe initialises */}
       {overlayVisible && (
         <div style={{
-          position: 'absolute', inset: 0, zIndex: 20,
-          background: '#000',
-          display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center', gap: 24,
+          position: 'absolute', inset: 0, zIndex: 20, background: '#000',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20,
         }}>
           <FullBg poster={poster} />
           <div className="cine-vignette" />
-          <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
+          <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
             {poster && (
               <div className="cine-loading-poster">
                 <img src={`https://image.tmdb.org/t/p/w185${poster}`} alt="" />
               </div>
             )}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-              <div className="cine-spinner" />
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontWeight: 700, fontSize: 15, color: '#fff' }}>Loading player…</div>
-                {title && (
-                  <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, marginTop: 5, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {title}
-                  </div>
-                )}
-              </div>
-            </div>
+            <div className="cine-spinner" />
           </div>
         </div>
-      )}
-
-      {/* Top bar */}
-      <div style={{
-        position: 'absolute', top: 0, left: 0, right: 0,
-        padding: '10px 14px',
-        background: 'linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, transparent 100%)',
-        display: 'flex', alignItems: 'center', gap: 10,
-        transition: 'opacity 0.3s', opacity: controlsVisible ? 1 : 0,
-        pointerEvents: controlsVisible ? 'auto' : 'none',
-        zIndex: 10,
-      }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{
-            fontWeight: 700, fontSize: 14, color: '#fff',
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          }}>{title}</div>
-          {isTV && (
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>
-              S{currentSeason} E{currentEpisode}
-            </div>
-          )}
-        </div>
-        <button
-          onClick={goFullscreenLandscape}
-          style={{
-            padding: '6px 12px', background: 'rgba(255,255,255,0.12)',
-            color: '#fff', border: '1px solid rgba(255,255,255,0.2)',
-            borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer',
-            whiteSpace: 'nowrap', flexShrink: 0, display: 'flex',
-            alignItems: 'center', gap: 5,
-          }}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
-            <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
-          </svg>
-          Fullscreen
-        </button>
-      </div>
-
-      {/* Bottom bar for TV */}
-      {isTV && (
-        <div style={{
-          position: 'absolute', bottom: 0, left: 0, right: 0,
-          padding: '14px 14px 18px',
-          background: 'linear-gradient(to top, rgba(0,0,0,0.7) 0%, transparent 100%)',
-          display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10,
-          transition: 'opacity 0.3s', opacity: controlsVisible ? 1 : 0,
-          pointerEvents: controlsVisible ? 'auto' : 'none',
-          zIndex: 10,
-        }}>
-          {onOpenEpisodes && (
-            <button
-              onClick={onOpenEpisodes}
-              style={{
-                padding: '7px 14px', background: 'rgba(255,255,255,0.12)',
-                color: '#fff', border: '1px solid rgba(255,255,255,0.2)',
-                borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-              }}
-            >
-              Episodes
-            </button>
-          )}
-          {hasNextEpisode && onNextEpisode && (
-            <button
-              onClick={onNextEpisode}
-              style={{
-                padding: '7px 14px', background: '#e50914',
-                color: '#fff', border: 'none',
-                borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-              }}
-            >
-              Next Episode ›
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Episode panel overlay */}
-      {showEpisodePanel && (
-        <EpisodePanel
-          tmdbId={tmdbId}
-          currentSeason={currentSeason}
-          currentEpisode={currentEpisode}
-          onSelect={onSelectEpisode}
-          onClose={onCloseEpisodePanel}
-        />
       )}
     </div>
   );
