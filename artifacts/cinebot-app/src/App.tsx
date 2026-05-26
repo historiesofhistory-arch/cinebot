@@ -250,6 +250,7 @@ function IframePlayer({
   showEpisodePanel, tmdbId, onSelectEpisode, onCloseEpisodePanel,
   onSwitchPlayer, playerLabel,
 }: IframePlayerProps) {
+  const [ready, setReady] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [overlayVisible, setOverlayVisible] = useState(true);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -265,7 +266,11 @@ function IframePlayer({
       else if ((el as any).webkitRequestFullscreen) (el as any).webkitRequestFullscreen();
     } catch (_) {}
     try { await (screen.orientation as any).lock?.('landscape'); } catch (_) {}
+    setReady(true);
   }, []);
+
+  // Reset splash when src changes (episode switch)
+  useEffect(() => { setReady(false); }, [src]);
 
   const showControls = useCallback(() => {
     setControlsVisible(true);
@@ -273,9 +278,9 @@ function IframePlayer({
     hideTimer.current = setTimeout(() => setControlsVisible(false), 3500);
   }, []);
 
-  // Hide the loading overlay after a fixed delay — onLoad fires too early on
-  // cross-origin iframes (before the video actually starts), so we use a timer only.
+  // Hide the loading overlay after a fixed delay — only once iframe is loading
   useEffect(() => {
+    if (!ready) return;
     setOverlayVisible(true);
     showControls();
     overlayTimer.current = setTimeout(() => {
@@ -285,7 +290,7 @@ function IframePlayer({
       if (hideTimer.current) clearTimeout(hideTimer.current);
       if (overlayTimer.current) clearTimeout(overlayTimer.current);
     };
-  }, [src]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [src, ready]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-detect "Video Not Found" from proxied SP player and silently switch
   useEffect(() => {
@@ -297,6 +302,38 @@ function IframePlayer({
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
   }, [onSwitchPlayer]);
+
+  // ── Splash screen — shown before user taps Go Fullscreen ─────────────────
+  if (!ready) {
+    return (
+      <div className="cine-portrait-overlay">
+        {poster && (
+          <div
+            className="cine-portrait-bg"
+            style={{ backgroundImage: `url(https://image.tmdb.org/t/p/w780${poster})` }}
+          />
+        )}
+        <div className="cine-portrait-content">
+          {poster && (
+            <img
+              className="cine-portrait-poster"
+              src={`https://image.tmdb.org/t/p/w342${poster}`}
+              alt={title}
+            />
+          )}
+          {title ? <p className="cine-portrait-title">{title}</p> : null}
+          {isTV && (
+            <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: 13, margin: '0 0 4px' }}>
+              Season {currentSeason} · Episode {currentEpisode}
+            </p>
+          )}
+          <button className="cine-portrait-btn" onClick={goFullscreenLandscape}>
+            ⛶ Go Fullscreen
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
