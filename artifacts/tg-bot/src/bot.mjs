@@ -60,9 +60,10 @@ const _groupSearch = new Map(); // key → { query }
 // ── IMDB free search (no API key) ────────────────────────────────────────────
 // Uses IMDB's undocumented suggestion API — same source as the search bar on imdb.com
 async function imdbSearch(query) {
-  const q = encodeURIComponent(query.toLowerCase().trim());
-  if (!q || q.length < 1) return [];
-  const letter = q[0];
+  const raw = query.toLowerCase().trim();
+  if (!raw || raw.length < 1) return [];
+  const letter = raw[0]; // extract BEFORE encoding — encoding turns é→%C3%A9, so letter would be '%'
+  const q = encodeURIComponent(raw);
   const url = `https://v2.sg.media-imdb.com/suggests/${letter}/${q}.json`;
   const key = `imdb_suggest:${q}`;
   const cached = cacheGet(key);
@@ -94,7 +95,7 @@ function buildImdbKeyboard(results, filterType = 'all') {
   for (const r of results) {
     if (!r.id || !r.l) continue;
     const qt = (r.q || '').toLowerCase();
-    const isTV = qt.includes('series') || qt.includes('mini') || qt === 'tv movie' && false;
+    const isTV = qt.includes('series') || qt.includes('mini');
     // 'feature' = movie, 'tv series' = series, 'tv mini-series' = series
     if (filterType === 'movie' && isTV) continue;
     if (filterType === 'series' && !isTV) continue;
@@ -111,6 +112,7 @@ function buildImdbKeyboard(results, filterType = 'all') {
 
 // ── TMDB helpers ─────────────────────────────────────────────────────────────
 async function tmdb(path, params = {}) {
+  if (!TMDB_KEY) throw new Error('TMDB_API_KEY is not set');
   const url = new URL(`${TMDB_BASE}${path}`);
   url.searchParams.set('api_key', TMDB_KEY);
   url.searchParams.set('language', 'en-US');
@@ -155,10 +157,6 @@ function stars(vote) {
   const rounded = Math.round(vote / 2);
   return '⭐'.repeat(Math.min(Math.max(rounded, 0), 5)) || '—';
 }
-function formatDate(d) {
-  if (!d) return 'Unknown';
-  return new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-}
 function genreNames(genres) {
   return genres?.length ? genres.map(g => g.name).join(', ') : 'N/A';
 }
@@ -169,32 +167,6 @@ function h(text) {
 function truncate(text, max = 700) {
   if (!text) return '';
   return text.length > max ? text.substring(0, max) + '…' : text;
-}
-
-// ── Fuzzy / spell-check helpers ──────────────────────────────────────────────
-function fuzzyMatch(query, title) {
-  if (!query || !title) return false;
-  const q = query.toLowerCase().trim().replace(/[^a-z0-9\s]/g, '');
-  const t = title.toLowerCase().trim().replace(/[^a-z0-9\s]/g, '');
-  if (!q || !t) return true;
-  if (t.includes(q) || q.includes(t)) return true;
-  const qWords = q.split(/\s+/).filter(w => w.length > 2);
-  if (qWords.length === 0) return true;
-  const tWords = t.split(/\s+/);
-  const matchCount = qWords.filter(w => tWords.some(tw => tw.includes(w) || w.includes(tw))).length;
-  return matchCount >= Math.ceil(qWords.length * 0.5);
-}
-
-function maybeInjectDidYouMean(query, items, keyboard) {
-  if (!keyboard || keyboard.length === 0 || !items || items.length === 0) return keyboard;
-  const top = items[0];
-  const topTitle = top.media_type === 'movie' ? (top.title || top.original_title) : (top.name || top.original_name);
-  if (fuzzyMatch(query, topTitle)) return keyboard;
-  const date = top.media_type === 'movie' ? top.release_date : top.first_air_date;
-  const year = date ? ` (${date.substring(0, 4)})` : '';
-  const cb = `${top.media_type}_${top.id}`;
-  const suggestionRow = [{ text: `🤔 Did you mean: ${topTitle}${year}?`, callback_data: cb }];
-  return [suggestionRow, ...keyboard];
 }
 
 // ── Watch button builder (no paid providers — free watch only) ────────────────
@@ -359,7 +331,7 @@ function buildSeriesMessage(s, cineMeta) {
     : (s?.vote_average || 0);
   const ratingStr = ratingNum ? `${ratingNum.toFixed(1)}/10 ${stars(ratingNum)}` : 'N/A';
   const creator = cineMeta?.director?.slice(0, 2).join(', ')
-                || s?.created_by?.slice(0, 2).map(c => c.name).join(', ') || '';
+                || s?.created_by?.slice(0, 2).map(c => c?.name).filter(Boolean).join(', ') || '';
   const cast    = cineMeta?.cast?.slice(0, 3).join(', ') || '';
   const overview = truncate(cineMeta?.description || s?.overview || 'No overview available.', 200);
   const genres   = cineMeta?.genres?.length
@@ -567,7 +539,7 @@ bot.command('help', async (ctx) => {
     `• Full plot overview &amp; cast\n` +
     `• Trailer on YouTube\n` +
     `• Free watch link — no ads\n\n` +
-    `<i>In groups: mention me — @BotName Inception</i>`,
+    `<i>In groups: just type a movie name — I search automatically!</i>`,
     { parse_mode: 'HTML' }
   );
 });
@@ -684,10 +656,12 @@ bot.on('callback_query:data', async (ctx) => {
                       data.startsWith('movie_')      || data.startsWith('tv_');
 
   if (isGroup && isMovieOrTv) {
-    // Redirect user to bot DM with the selection as a start param
     const botUsername = await getBotUsername();
-    // Telegram start param max 64 chars — all our keys are well within limit
-    const startParam  = `gsp_${data}`;
+    if (!botUsername) {
+      try { await ctx.answerCallbackQuery({ text: '⚠️ Bot not ready yet. Try again in a moment.' }); } catch (_) {}
+      return;
+    }
+    const startParam = `gsp_${data}`; // max 64 chars — all our keys are well within limit
     try {
       await ctx.answerCallbackQuery({ url: `https://t.me/${botUsername}?start=${startParam}` });
     } catch (_) {}
@@ -731,7 +705,7 @@ bot.on('callback_query:data', async (ctx) => {
     const parts = data.split('_');
     const mediaType = parts[1];
     const genreId = parts[2];
-    const genreName = decodeURIComponent(parts.slice(3).join('_'));
+    const genreName = (() => { try { return decodeURIComponent(parts.slice(3).join('_')); } catch (_) { return parts.slice(3).join(' '); } })();
     const icon = mediaType === 'movie' ? '🎬' : '📺';
     const waitMsg = await safeSend(chatId, `${icon} Loading top ${h(genreName)} ${mediaType === 'movie' ? 'movies' : 'series'}...`);
     try {
