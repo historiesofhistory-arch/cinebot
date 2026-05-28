@@ -6,6 +6,15 @@ import '@vidstack/react/player/styles/default/layouts/video.css';
 
 const API_BASE = '/api';
 
+// Resolve poster to a full URL — poster can be a TMDB path (/abc.jpg) or a
+// full URL already (Cinemeta). Never prepend TMDB base to a full URL.
+function posterUrl(poster: string, size: string): string {
+  if (!poster) return '';
+  return poster.startsWith('http')
+    ? poster
+    : `https://image.tmdb.org/t/p/${size}${poster}`;
+}
+
 // ── API helpers ────────────────────────────────────────────────────────────────
 
 async function resolveVidLink(p: {
@@ -159,7 +168,7 @@ function FullBg({ poster }: { poster: string }) {
   return poster ? (
     <div style={{
       position: 'absolute', inset: 0,
-      backgroundImage: `url(https://image.tmdb.org/t/p/w780${poster})`,
+      backgroundImage: `url(${posterUrl(poster, 'w780')})`,
       backgroundSize: 'cover', backgroundPosition: 'center',
       filter: 'blur(28px) brightness(0.1)',
     }} />
@@ -174,7 +183,7 @@ function LoadingScreen({ poster, title }: { poster: string; title: string }) {
       <div className="cine-loading-content" style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 28, padding: '0 24px' }}>
         {poster ? (
           <div className="cine-loading-poster">
-            <img src={`https://image.tmdb.org/t/p/w185${poster}`} alt="" />
+            <img src={posterUrl(poster, 'w185')} alt="" />
           </div>
         ) : (
           <div className="cine-loading-poster cine-skeleton" />
@@ -318,13 +327,8 @@ function IframePlayer({
 
   // ── Splash screen — shown before user taps Watch, or when Coming Soon ───────
   if (!ready) {
-    // Resolve poster — can be a TMDB path (/abc.jpg) or a full URL (Cinemeta)
-    const posterSrc = poster
-      ? poster.startsWith('http') ? poster : `https://image.tmdb.org/t/p/w342${poster}`
-      : null;
-    const bgSrc = poster
-      ? poster.startsWith('http') ? poster : `https://image.tmdb.org/t/p/w780${poster}`
-      : null;
+    const posterSrc = posterUrl(poster, 'w342') || null;
+    const bgSrc     = posterUrl(poster, 'w780') || null;
 
     return (
       <div className="cine-portrait-overlay">
@@ -400,7 +404,7 @@ function IframePlayer({
           <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
             {poster && (
               <div className="cine-loading-poster">
-                <img src={`https://image.tmdb.org/t/p/w185${poster}`} alt="" />
+                <img src={posterUrl(poster, 'w185')} alt="" />
               </div>
             )}
             <div className="cine-spinner" />
@@ -783,7 +787,7 @@ function CinePlayer(props: PlayerProps) {
       {poster && (
         <div style={{
           position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none',
-          backgroundImage: `url(https://image.tmdb.org/t/p/w780${poster})`,
+          backgroundImage: `url(${posterUrl(poster, 'w780')})`,
           backgroundSize: 'cover', backgroundPosition: 'center',
           filter: 'blur(24px) brightness(0.15)',
         }} />
@@ -798,7 +802,7 @@ function CinePlayer(props: PlayerProps) {
       <div ref={topBarRef} className="cine-top-bar" style={{ opacity: 0, pointerEvents: 'none', zIndex: 50 }}>
         {poster && (
           <div className="cine-mini-poster">
-            <img src={`https://image.tmdb.org/t/p/w92${poster}`} alt="" />
+            <img src={posterUrl(poster, 'w92')} alt="" />
           </div>
         )}
         <div className="cine-title-block">
@@ -937,14 +941,14 @@ function PortraitOverlay({
       {poster && (
         <div
           className="cine-portrait-bg"
-          style={{ backgroundImage: `url(https://image.tmdb.org/t/p/w780${poster})` }}
+          style={{ backgroundImage: `url(${posterUrl(poster, 'w780')})` }}
         />
       )}
       <div className="cine-portrait-content">
         {poster && (
           <img
             className="cine-portrait-poster"
-            src={`https://image.tmdb.org/t/p/w342${poster}`}
+            src={posterUrl(poster, 'w342')}
             alt={title}
           />
         )}
