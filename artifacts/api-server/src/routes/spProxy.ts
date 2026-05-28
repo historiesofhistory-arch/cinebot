@@ -24,6 +24,41 @@ const DETECT_SCRIPT = `<script>
 })();
 </script>`;
 
+// GET /api/sp-check?url=<encoded_sp_url>
+// Lightweight availability check — HEAD request to SP, returns {available:bool}.
+// A 404 from SP means the title is not in its library (true from any IP).
+// A 200 means the page exists (the video may or may not stream from that IP).
+router.get("/sp-check", async (req, res) => {
+  const raw = req.query.url as string;
+  if (!raw) return res.status(400).json({ error: "url required" });
+
+  let target: string;
+  try {
+    target = decodeURIComponent(raw);
+    const u = new URL(target);
+    if (u.hostname !== ALLOWED_HOST) return res.status(403).json({ error: "forbidden" });
+  } catch {
+    return res.status(400).json({ error: "invalid url" });
+  }
+
+  try {
+    const upstream = await fetch(target, {
+      method: "HEAD",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Mobile Safari/537.36",
+        "Referer": "https://allmovielandapp.app/",
+      },
+      signal: AbortSignal.timeout(8000),
+      redirect: "follow",
+    });
+    logger.info({ target, status: upstream.status }, "sp-check");
+    return res.json({ available: upstream.ok });
+  } catch (err: any) {
+    logger.warn({ err: err.message }, "sp-check fetch failed — treating as unavailable");
+    return res.json({ available: false });
+  }
+});
+
 // GET /api/sp-proxy?url=<encoded_sp_url>
 // Fetches the SP player page, injects error-detection script, serves it.
 // This makes it same-origin so we can postMessage errors back to our app.

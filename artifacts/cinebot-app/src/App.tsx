@@ -255,6 +255,8 @@ interface IframePlayerProps {
   playerLabel: string;
 }
 
+type SpCheckState = 'checking' | 'available' | 'unavailable';
+
 function IframePlayer({
   src, title, poster, overview, year, isTV, currentSeason, currentEpisode,
   hasNextEpisode, onNextEpisode, onOpenEpisodes,
@@ -264,8 +266,11 @@ function IframePlayer({
   const [ready, setReady] = useState(false);
   const [overlayVisible, setOverlayVisible] = useState(true);
   const overlayTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // comingSoon = SP returned "Video Not Found" — show info card instead of watch button
-  const [comingSoon, setComingSoon] = useState(false);
+  // checkState: server pre-checks if SP has this title before showing Watch button
+  // 'checking'   = HEAD request in flight
+  // 'available'  = SP returned 200 → show Watch Fullscreen
+  // 'unavailable'= SP returned 404 → show Not Available
+  const [checkState, setCheckState] = useState<SpCheckState>('checking');
 
   const goFullscreenLandscape = useCallback(async () => {
     const tg = (window as any).Telegram?.WebApp;
@@ -280,8 +285,23 @@ function IframePlayer({
     setReady(true);
   }, []);
 
-  // Reset splash (and coming-soon flag) when src changes (episode switch)
-  useEffect(() => { setReady(false); setComingSoon(false); }, [src]);
+  // Reset splash & check state when src changes (new title or episode switch)
+  useEffect(() => { setReady(false); setCheckState('checking'); }, [src]);
+
+  // Server-side availability pre-check via /api/sp-check (HEAD request, IP-independent)
+  // SP returns 404 for titles not in its library regardless of caller IP.
+  // On network failure we default to 'available' so the user isn't blocked.
+  useEffect(() => {
+    if (!src) { setCheckState('unavailable'); return; }
+    const controller = new AbortController();
+    fetch(`${API_BASE}/sp-check?url=${encodeURIComponent(src)}`, { signal: controller.signal })
+      .then(r => r.json())
+      .then((d: { available: boolean }) => {
+        setCheckState(d.available ? 'available' : 'unavailable');
+      })
+      .catch(() => setCheckState('available')); // network error → don't block user
+    return () => controller.abort();
+  }, [src]);
 
   // Re-show splash if user exits fullscreen or rotates to portrait
   useEffect(() => {
@@ -313,19 +333,7 @@ function IframePlayer({
     return () => { if (overlayTimer.current) clearTimeout(overlayTimer.current); };
   }, [src, ready]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Detect "Video Not Found" injected by sp-proxy → go back to splash with Coming Soon card
-  useEffect(() => {
-    const handler = (e: MessageEvent) => {
-      if (e.data?.type === 'cinebot_video_not_found') {
-        setReady(false);
-        setComingSoon(true);
-      }
-    };
-    window.addEventListener('message', handler);
-    return () => window.removeEventListener('message', handler);
-  }, []);
-
-  // ── Splash screen — shown before user taps Watch, or when Coming Soon ───────
+  // ── Splash screen — shown before user taps Watch, or when unavailable ───────
   if (!ready) {
     const posterSrc = posterUrl(poster, 'w342') || null;
     const bgSrc     = posterUrl(poster, 'w780') || null;
@@ -355,15 +363,25 @@ function IframePlayer({
             </div>
             {overview ? <p className="cine-splash-overview">{overview}</p> : null}
 
-            {comingSoon ? (
+            {checkState === 'checking' && (
+              <div className="cine-splash-checking">
+                <span className="cine-splash-check-dot" />
+                <span className="cine-splash-check-dot" />
+                <span className="cine-splash-check-dot" />
+              </div>
+            )}
+
+            {checkState === 'unavailable' && (
               <>
                 <div className="cine-coming-soon-badge">🎬 Not Available Yet</div>
-                <p className="cine-splash-hint">This title isn't streaming on this source right now.</p>
+                <p className="cine-splash-hint">This title isn't on this source right now.</p>
                 <button className="cine-splash-btn cine-splash-btn--alt" onClick={onSwitchPlayer}>
                   Try Another Source
                 </button>
               </>
-            ) : (
+            )}
+
+            {checkState === 'available' && (
               <>
                 <button className="cine-splash-btn" onClick={goFullscreenLandscape}>
                   <span className="cine-splash-play-wrap">
