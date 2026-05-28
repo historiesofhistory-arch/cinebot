@@ -1046,18 +1046,18 @@ export default function App() {
     });
   }, [isTV, tmdbId, currentSeason]);
 
-  // ── Build iframe URL — routed through sp-proxy so error detection works ─────
-  // The proxy injects a detection script that postMessages 'cinebot_video_not_found'
-  // when "Video Not Found" text appears. Video stream still loads from the user's
-  // browser (Indian IP) because the base-tag in the proxied HTML keeps all
-  // requests going to the original domain.
+  // ── Build iframe URL (SP player — loaded directly from user's browser) ───────
+  // NOTE: The sp-proxy approach was attempted for "Video Not Found" detection but
+  // the proxy fetch runs on Replit's IP (not the user's Indian IP), causing the SP
+  // site to refuse the page or return a false "Video Not Found" for every title.
+  // Loading directly preserves the user's IP so the player works correctly.
 
   const buildIframeSrc = useCallback((season: number, episode: number): string | null => {
     if (!imdbId) return null;
     const prefix = isTV ? 's' : 'f';
     let spUrl = `https://gemma416okl.com/play/${prefix}${imdbId}?d=allmovielandapp.app`;
     if (isTV) spUrl += `&s=${season}&e=${episode}`;
-    return `${API_BASE}/sp-proxy?url=${encodeURIComponent(spUrl)}`;
+    return spUrl;
   }, [imdbId, isTV]);
 
   // ── Switch to sflix (2nd fallback iframe) ────────────────────────────────
