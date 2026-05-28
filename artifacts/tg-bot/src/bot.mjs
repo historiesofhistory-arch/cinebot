@@ -53,6 +53,10 @@ function cacheGet(key) {
 }
 function cacheSet(key, val) { _cache.set(key, { val, ts: Date.now() }); }
 
+// ── Group search store: query → results (for regenerate button) ──────────────
+// Key: `grp_${chatId}_${msgId}` | expires naturally when message is deleted
+const _groupSearch = new Map(); // key → { query }
+
 // ── IMDB free search (no API key) ────────────────────────────────────────────
 // Uses IMDB's undocumented suggestion API — same source as the search bar on imdb.com
 async function imdbSearch(query) {
@@ -215,6 +219,99 @@ function buildWatchButtons(mediaType, title, trailerUrl, infoUrl, { imdbId = '',
   }
   if (bottomRow.length) buttons.push(bottomRow);
   return buttons;
+}
+
+// ── Shared detail senders (called from DM callbacks AND group→private deeplinks) ──
+async function sendMovieDetail(chatId, imdbId) {
+  const waitMsg = await safeSend(chatId, '⏳ Fetching movie details...');
+  try {
+    const cineMeta = await cinemeta('movie', imdbId);
+    if (!cineMeta) throw new Error('No Cinemeta data');
+    const title = cineMeta.name || 'Unknown';
+    const year  = String(cineMeta.releaseInfo || '').slice(0, 4);
+    const trailerUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(title + ' ' + year + ' official trailer')}`;
+    const imdbUrl = `https://www.imdb.com/title/${imdbId}`;
+    const text = buildMovieMessage(null, cineMeta);
+    const keyboard = buildWatchButtons('movie', title, trailerUrl, imdbUrl, {
+      imdbId, poster: cineMeta.poster || '', year, overview: cineMeta.description || '',
+    });
+    try { await bot.api.deleteMessage(chatId, waitMsg?.message_id); } catch (_) {}
+    if (cineMeta.poster) await safePhoto(chatId, cineMeta.poster, text, { reply_markup: { inline_keyboard: keyboard } });
+    else await safeSend(chatId, text, { reply_markup: { inline_keyboard: keyboard } });
+  } catch (err) {
+    console.error('sendMovieDetail error:', err?.message);
+    await safeEdit(chatId, waitMsg?.message_id, '⚠️ Could not load movie details. Please try again.');
+  }
+}
+
+async function sendTvDetail(chatId, imdbId) {
+  const waitMsg = await safeSend(chatId, '⏳ Fetching series details...');
+  try {
+    const cineMeta = await cinemeta('series', imdbId);
+    if (!cineMeta) throw new Error('No Cinemeta data');
+    const title = cineMeta.name || 'Unknown';
+    const year  = String(cineMeta.releaseInfo || '').slice(0, 4);
+    const trailerUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(title + ' ' + year + ' official trailer')}`;
+    const imdbUrl = `https://www.imdb.com/title/${imdbId}`;
+    const text = buildSeriesMessage(null, cineMeta);
+    const keyboard = buildWatchButtons('tv', title, trailerUrl, imdbUrl, {
+      imdbId, poster: cineMeta.poster || '', year, overview: cineMeta.description || '',
+    });
+    try { await bot.api.deleteMessage(chatId, waitMsg?.message_id); } catch (_) {}
+    if (cineMeta.poster) await safePhoto(chatId, cineMeta.poster, text, { reply_markup: { inline_keyboard: keyboard } });
+    else await safeSend(chatId, text, { reply_markup: { inline_keyboard: keyboard } });
+  } catch (err) {
+    console.error('sendTvDetail error:', err?.message);
+    await safeEdit(chatId, waitMsg?.message_id, '⚠️ Could not load series details. Please try again.');
+  }
+}
+
+async function sendTmdbMovieDetail(chatId, tmdbId) {
+  const waitMsg = await safeSend(chatId, '⏳ Fetching movie details...');
+  try {
+    const movie = await tmdb(`/movie/${tmdbId}`);
+    const imdbId = movie.imdb_id || '';
+    const cineMeta = await cinemeta('movie', imdbId);
+    const title = movie.title || movie.original_title;
+    const year  = movie.release_date?.slice(0, 4) || '';
+    const trailerUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(title + ' ' + year + ' official trailer')}`;
+    const infoUrl = imdbId ? `https://www.imdb.com/title/${imdbId}` : `https://www.themoviedb.org/movie/${tmdbId}`;
+    const text = buildMovieMessage(movie, cineMeta);
+    const keyboard = buildWatchButtons('movie', title, trailerUrl, infoUrl, {
+      imdbId, poster: movie.poster_path || '', year, overview: cineMeta?.description || movie.overview || '',
+    });
+    try { await bot.api.deleteMessage(chatId, waitMsg?.message_id); } catch (_) {}
+    const imgUrl = movie.poster_path ? `${IMG_BASE}${movie.poster_path}` : null;
+    if (imgUrl) await safePhoto(chatId, imgUrl, text, { reply_markup: { inline_keyboard: keyboard } });
+    else await safeSend(chatId, text, { reply_markup: { inline_keyboard: keyboard } });
+  } catch (err) {
+    console.error('sendTmdbMovieDetail error:', err?.message);
+    await safeEdit(chatId, waitMsg?.message_id, '⚠️ Could not load movie details. Please try again.');
+  }
+}
+
+async function sendTmdbTvDetail(chatId, tmdbId) {
+  const waitMsg = await safeSend(chatId, '⏳ Fetching series details...');
+  try {
+    const [series, externalIds] = await Promise.all([tmdb(`/tv/${tmdbId}`), tmdb(`/tv/${tmdbId}/external_ids`)]);
+    const imdbId = externalIds?.imdb_id || '';
+    const cineMeta = await cinemeta('series', imdbId);
+    const title = series.name || series.original_name;
+    const year  = series.first_air_date?.slice(0, 4) || '';
+    const trailerUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(title + ' ' + year + ' official trailer')}`;
+    const infoUrl = imdbId ? `https://www.imdb.com/title/${imdbId}` : `https://www.themoviedb.org/tv/${tmdbId}`;
+    const text = buildSeriesMessage(series, cineMeta);
+    const keyboard = buildWatchButtons('tv', title, trailerUrl, infoUrl, {
+      imdbId, poster: series.poster_path || '', year, overview: cineMeta?.description || series.overview || '',
+    });
+    try { await bot.api.deleteMessage(chatId, waitMsg?.message_id); } catch (_) {}
+    const imgUrl = series.poster_path ? `${IMG_BASE}${series.poster_path}` : null;
+    if (imgUrl) await safePhoto(chatId, imgUrl, text, { reply_markup: { inline_keyboard: keyboard } });
+    else await safeSend(chatId, text, { reply_markup: { inline_keyboard: keyboard } });
+  } catch (err) {
+    console.error('sendTmdbTvDetail error:', err?.message);
+    await safeEdit(chatId, waitMsg?.message_id, '⚠️ Could not load series details. Please try again.');
+  }
 }
 
 // ── Message builders ──────────────────────────────────────────────────────────
@@ -419,7 +516,25 @@ async function handleGenres(chatId) {
 
 // ── Commands ──────────────────────────────────────────────────────────────────
 bot.command('start', async (ctx) => {
-  const name = h(ctx.from?.first_name || 'there');
+  const param = ctx.match?.trim();
+  const userId = ctx.from?.id;
+  const name   = h(ctx.from?.first_name || 'there');
+
+  // ── Group→Private deep link: gsp_imdb_movie_tt... / gsp_imdb_tv_tt... / gsp_movie_123 / gsp_tv_123 ──
+  if (param?.startsWith('gsp_')) {
+    const inner = param.slice(4); // strip 'gsp_'
+    if (inner.startsWith('imdb_movie_')) {
+      await sendMovieDetail(userId, inner.slice('imdb_movie_'.length));
+    } else if (inner.startsWith('imdb_tv_')) {
+      await sendTvDetail(userId, inner.slice('imdb_tv_'.length));
+    } else if (inner.startsWith('movie_')) {
+      await sendTmdbMovieDetail(userId, inner.slice('movie_'.length));
+    } else if (inner.startsWith('tv_')) {
+      await sendTmdbTvDetail(userId, inner.slice('tv_'.length));
+    }
+    return;
+  }
+
   await ctx.reply(
     `🎬 <b>Hey ${name}, welcome to CineBot!</b>\n\n` +
     `Stream any movie or series — <b>free, no ads, no redirects</b> — right inside Telegram.\n\n` +
@@ -530,11 +645,56 @@ bot.command('genres',         (ctx) => handleGenres(ctx.chat.id));
 
 // ── Callback query handler ────────────────────────────────────────────────────
 bot.on('callback_query:data', async (ctx) => {
-  const chatId = ctx.chat?.id;
+  const chatId   = ctx.chat?.id;
+  const userId   = ctx.from?.id;
   if (!chatId) return;
-  const data = ctx.callbackQuery.data || '';
+  const data     = ctx.callbackQuery.data || '';
+  const isGroup  = ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
+
+  // ── Regenerate group search results ───────────────────────────────────────
+  if (data.startsWith('regen_')) {
+    const key    = data.slice(6);
+    const stored = _groupSearch.get(key);
+    if (!stored) {
+      await ctx.answerCallbackQuery({ text: '⏰ Search expired. Type your query again.' });
+      return;
+    }
+    await ctx.answerCallbackQuery({ text: '🔄 Refreshing results...' });
+    try {
+      const results  = await imdbSearch(stored.query);
+      const keyboard = buildImdbKeyboard(results, 'all');
+      if (!keyboard) {
+        await ctx.editMessageText(`❌ No results for "<b>${h(stored.query)}</b>".`, { parse_mode: 'HTML' });
+        return;
+      }
+      keyboard.push([{ text: '🔄 Regenerate', callback_data: data }]);
+      await ctx.editMessageText(
+        `🔎 <b>Results for "${h(stored.query)}":</b>\n🎬 = Movie  📺 = Series\n\n<i>Tap a title — details sent to your DM 📩</i>`,
+        { parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } }
+      );
+    } catch (err) {
+      console.error('regen error:', err?.message);
+    }
+    return;
+  }
 
   // Acknowledge immediately so Telegram stops showing the loading spinner
+  // For group callbacks on movie/series — we answer with a DM deep-link URL instead
+  const isMovieOrTv = data.startsWith('imdb_movie_') || data.startsWith('imdb_tv_') ||
+                      data.startsWith('movie_')      || data.startsWith('tv_');
+
+  if (isGroup && isMovieOrTv) {
+    // Redirect user to bot DM with the selection as a start param
+    const botUsername = await getBotUsername();
+    // Telegram start param max 64 chars — all our keys are well within limit
+    const startParam  = `gsp_${data}`;
+    try {
+      await ctx.answerCallbackQuery({ url: `https://t.me/${botUsername}?start=${startParam}` });
+    } catch (_) {}
+    return;
+  }
+
+  // Acknowledge for non-group / non-movie callbacks
   try { await ctx.answerCallbackQuery(); } catch (_) {}
 
   if (data === 'quick_trending') { handleTrending(chatId); return; }
@@ -542,141 +702,27 @@ bot.on('callback_query:data', async (ctx) => {
   if (data === 'quick_series')   { handlePopularSeries(chatId); return; }
   if (data === 'quick_genres')   { handleGenres(chatId); return; }
 
-  // ── IMDB-sourced movie detail (0 TMDB calls — Cinemeta only) ──────────────
+  // ── IMDB-sourced movie detail ──────────────────────────────────────────────
   if (data.startsWith('imdb_movie_')) {
-    const imdbId = data.slice('imdb_movie_'.length);
-    const waitMsg = await safeSend(chatId, '⏳ Fetching movie details...');
-    try {
-      const cineMeta = await cinemeta('movie', imdbId);
-      if (!cineMeta) throw new Error('No Cinemeta data');
-      const title = cineMeta.name || 'Unknown';
-      const year  = String(cineMeta.releaseInfo || '').slice(0, 4);
-      const trailerUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(title + ' ' + year + ' official trailer')}`;
-      const imdbUrl = `https://www.imdb.com/title/${imdbId}`;
-      const text = buildMovieMessage(null, cineMeta);
-      const keyboard = buildWatchButtons('movie', title, trailerUrl, imdbUrl, {
-        imdbId,
-        poster: cineMeta.poster || '',
-        year,
-        overview: cineMeta.description || '',
-      });
-      try { await bot.api.deleteMessage(chatId, waitMsg?.message_id); } catch (_) {}
-      const imgUrl = cineMeta.poster || null;
-      if (imgUrl) {
-        await safePhoto(chatId, imgUrl, text, { reply_markup: { inline_keyboard: keyboard } });
-      } else {
-        await safeSend(chatId, text, { reply_markup: { inline_keyboard: keyboard } });
-      }
-    } catch (err) {
-      console.error('imdb_movie detail error:', err?.message);
-      await safeEdit(chatId, waitMsg?.message_id, '⚠️ Could not load movie details. Please try again.');
-    }
+    await sendMovieDetail(chatId, data.slice('imdb_movie_'.length));
     return;
   }
 
-  // ── IMDB-sourced TV detail (0 TMDB calls — Cinemeta only) ─────────────────
+  // ── IMDB-sourced TV detail ─────────────────────────────────────────────────
   if (data.startsWith('imdb_tv_')) {
-    const imdbId = data.slice('imdb_tv_'.length);
-    const waitMsg = await safeSend(chatId, '⏳ Fetching series details...');
-    try {
-      const cineMeta = await cinemeta('series', imdbId);
-      if (!cineMeta) throw new Error('No Cinemeta data');
-      const title = cineMeta.name || 'Unknown';
-      const year  = String(cineMeta.releaseInfo || '').slice(0, 4);
-      const trailerUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(title + ' ' + year + ' official trailer')}`;
-      const imdbUrl = `https://www.imdb.com/title/${imdbId}`;
-      const text = buildSeriesMessage(null, cineMeta);
-      const keyboard = buildWatchButtons('tv', title, trailerUrl, imdbUrl, {
-        imdbId,
-        poster: cineMeta.poster || '',
-        year,
-        overview: cineMeta.description || '',
-      });
-      try { await bot.api.deleteMessage(chatId, waitMsg?.message_id); } catch (_) {}
-      const imgUrl = cineMeta.poster || null;
-      if (imgUrl) {
-        await safePhoto(chatId, imgUrl, text, { reply_markup: { inline_keyboard: keyboard } });
-      } else {
-        await safeSend(chatId, text, { reply_markup: { inline_keyboard: keyboard } });
-      }
-    } catch (err) {
-      console.error('imdb_tv detail error:', err?.message);
-      await safeEdit(chatId, waitMsg?.message_id, '⚠️ Could not load series details. Please try again.');
-    }
+    await sendTvDetail(chatId, data.slice('imdb_tv_'.length));
     return;
   }
 
-  // ── TMDB-sourced movie detail (trending/popular/genre — 1 TMDB call) ───────
+  // ── TMDB-sourced movie detail (trending/popular/genre) ────────────────────
   if (data.startsWith('movie_')) {
-    const id = data.slice('movie_'.length);
-    const waitMsg = await safeSend(chatId, '⏳ Fetching movie details...');
-    try {
-      const movie = await tmdb(`/movie/${id}`);
-      const imdbId = movie.imdb_id || '';
-      const cineMeta = await cinemeta('movie', imdbId);
-      const title = movie.title || movie.original_title;
-      const year  = movie.release_date?.slice(0, 4) || '';
-      const trailerUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(title + ' ' + year + ' official trailer')}`;
-      const infoUrl = imdbId
-        ? `https://www.imdb.com/title/${imdbId}`
-        : `https://www.themoviedb.org/movie/${id}`;
-      const text = buildMovieMessage(movie, cineMeta);
-      const keyboard = buildWatchButtons('movie', title, trailerUrl, infoUrl, {
-        imdbId,
-        poster: movie.poster_path || '',
-        year,
-        overview: cineMeta?.description || movie.overview || '',
-      });
-      try { await bot.api.deleteMessage(chatId, waitMsg?.message_id); } catch (_) {}
-      const imgUrl = movie.poster_path ? `${IMG_BASE}${movie.poster_path}` : null;
-      if (imgUrl) {
-        await safePhoto(chatId, imgUrl, text, { reply_markup: { inline_keyboard: keyboard } });
-      } else {
-        await safeSend(chatId, text, { reply_markup: { inline_keyboard: keyboard } });
-      }
-    } catch (err) {
-      console.error('movie detail error:', err?.message);
-      await safeEdit(chatId, waitMsg?.message_id, '⚠️ Could not load movie details. Please try again.');
-    }
+    await sendTmdbMovieDetail(chatId, data.slice('movie_'.length));
     return;
   }
 
-  // TV/Series detail
+  // ── TMDB-sourced TV detail ─────────────────────────────────────────────────
   if (data.startsWith('tv_')) {
-    const id = data.slice('tv_'.length);
-    const waitMsg = await safeSend(chatId, '⏳ Fetching series details...');
-    try {
-      // 2 TMDB calls — Cinemeta fills cast/ratings for free, providers removed
-      const [series, externalIds] = await Promise.all([
-        tmdb(`/tv/${id}`),
-        tmdb(`/tv/${id}/external_ids`),
-      ]);
-      const imdbId = externalIds?.imdb_id || '';
-      const cineMeta = await cinemeta('series', imdbId);
-      const title = series.name || series.original_name;
-      const year  = series.first_air_date?.slice(0, 4) || '';
-      const trailerUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(title + ' ' + year + ' official trailer')}`;
-      const infoUrl = imdbId
-        ? `https://www.imdb.com/title/${imdbId}`
-        : `https://www.themoviedb.org/tv/${id}`;
-      const text = buildSeriesMessage(series, cineMeta);
-      const keyboard = buildWatchButtons('tv', title, trailerUrl, infoUrl, {
-        imdbId,
-        poster: series.poster_path || '',
-        year,
-        overview: cineMeta?.description || series.overview || '',
-      });
-      try { await bot.api.deleteMessage(chatId, waitMsg?.message_id); } catch (_) {}
-      const imgUrl = series.poster_path ? `${IMG_BASE}${series.poster_path}` : null;
-      if (imgUrl) {
-        await safePhoto(chatId, imgUrl, text, { reply_markup: { inline_keyboard: keyboard } });
-      } else {
-        await safeSend(chatId, text, { reply_markup: { inline_keyboard: keyboard } });
-      }
-    } catch (err) {
-      console.error('tv detail error:', err?.message);
-      await safeEdit(chatId, waitMsg?.message_id, '⚠️ Could not load series details. Please try again.');
-    }
+    await sendTmdbTvDetail(chatId, data.slice('tv_'.length));
     return;
   }
 
@@ -707,43 +753,63 @@ bot.on('callback_query:data', async (ctx) => {
   }
 });
 
-// ── Plain text auto-search (private) + @mention search (groups) ───────────────
+// ── Plain text auto-search ────────────────────────────────────────────────────
+// Private: search and show results directly.
+// Group:   search every message, show results with Regenerate button,
+//          auto-delete after 10 min. Tapping a result opens bot DM.
 bot.on('message:text', async (ctx) => {
   const rawText = ctx.message.text || '';
   if (rawText.startsWith('/') || rawText.length < 2) return;
 
   const isGroup = ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
   const chatId  = ctx.chat.id;
-  let query = rawText.trim();
+  let query     = rawText.trim();
 
   if (isGroup) {
-    // In groups: only respond when the bot is @mentioned
+    // Strip @mention if present, otherwise treat whole message as query
     const botUsername = await getBotUsername();
-    const mention = `@${botUsername}`.toLowerCase();
-    if (!rawText.toLowerCase().includes(mention)) return;
-    // Strip the mention to get the actual search query
     query = rawText.replace(new RegExp(`@${botUsername}`, 'gi'), '').trim();
-    if (!query || query.length < 2) {
-      return ctx.reply(
-        `👋 Hi! Mention me with a movie or series name to search.\n` +
-        `Example: <code>@${botUsername} Inception</code>`,
-        { parse_mode: 'HTML', reply_to_message_id: ctx.message.message_id }
-      );
-    }
+    if (!query || query.length < 2) return; // ignore empty / single-char messages
   }
 
   const waitMsg = await safeSend(chatId, `🔎 Searching for <b>${h(query)}</b>...`);
   try {
-    const results = await imdbSearch(query);
+    const results  = await imdbSearch(query);
     const keyboard = buildImdbKeyboard(results, 'all');
+
     if (!keyboard) {
-      return safeEdit(chatId, waitMsg?.message_id,
+      await safeEdit(chatId, waitMsg?.message_id,
         `❌ Nothing found for "<b>${h(query)}</b>".\nTry a different spelling or use /movie / /series.`);
+      return;
     }
-    await safeEdit(chatId, waitMsg?.message_id,
-      `🔎 <b>Results for "${h(query)}":</b>\n🎬 = Movie  📺 = Series\n\nTap for details &amp; watch links:`, {
-      reply_markup: { inline_keyboard: keyboard }
-    });
+
+    if (isGroup) {
+      // Store query for Regenerate, keyed by chat+waitMsg id
+      const regenKey = `${chatId}_${waitMsg?.message_id}`;
+      _groupSearch.set(regenKey, { query });
+      keyboard.push([{ text: '🔄 Regenerate', callback_data: `regen_${regenKey}` }]);
+
+      const sentMsg = await safeEdit(chatId, waitMsg?.message_id,
+        `🔎 <b>Results for "${h(query)}":</b>\n🎬 = Movie  📺 = Series\n\n` +
+        `<i>Tap a title — details will be sent to your DM 📩</i>`,
+        { reply_markup: { inline_keyboard: keyboard } }
+      );
+
+      // Auto-delete both the user's search message and the results after 10 min
+      const resultMsgId = sentMsg?.message_id ?? waitMsg?.message_id;
+      setTimeout(() => {
+        bot.api.deleteMessage(chatId, resultMsgId).catch(() => {});
+        bot.api.deleteMessage(chatId, ctx.message.message_id).catch(() => {});
+        _groupSearch.delete(regenKey);
+      }, 10 * 60 * 1000);
+
+    } else {
+      // Private chat — show results directly, no DM redirect needed
+      await safeEdit(chatId, waitMsg?.message_id,
+        `🔎 <b>Results for "${h(query)}":</b>\n🎬 = Movie  📺 = Series\n\nTap for details &amp; watch links:`,
+        { reply_markup: { inline_keyboard: keyboard } }
+      );
+    }
   } catch (err) {
     console.error('auto-search error:', err?.message);
     await safeEdit(chatId, waitMsg?.message_id, '⚠️ Search failed. Please try again.');
