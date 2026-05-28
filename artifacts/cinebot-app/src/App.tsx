@@ -286,22 +286,10 @@ function IframePlayer({
   }, []);
 
   // Reset splash & check state when src changes (new title or episode switch)
-  useEffect(() => { setReady(false); setCheckState('checking'); }, [src]);
-
-  // Server-side availability pre-check via /api/sp-check (HEAD request, IP-independent)
-  // SP returns 404 for titles not in its library regardless of caller IP.
-  // On network failure we default to 'available' so the user isn't blocked.
-  useEffect(() => {
-    if (!src) { setCheckState('unavailable'); return; }
-    const controller = new AbortController();
-    fetch(`${API_BASE}/sp-check?url=${encodeURIComponent(src)}`, { signal: controller.signal })
-      .then(r => r.json())
-      .then((d: { available: boolean }) => {
-        setCheckState(d.available ? 'available' : 'unavailable');
-      })
-      .catch(() => setCheckState('available')); // network error → don't block user
-    return () => controller.abort();
-  }, [src]);
+  // NOTE: sp-check server endpoint was tried but SP returns 404 for ALL requests
+  // from non-Indian IPs (Replit's servers), so it can't distinguish "not in library"
+  // from "IP blocked". We default to 'available' and let the user try watching.
+  useEffect(() => { setReady(false); setCheckState('available'); }, [src]);
 
   // Re-show splash if user exits fullscreen or rotates to portrait
   useEffect(() => {
