@@ -270,7 +270,7 @@ function IframePlayer({
   // 'checking'   = HEAD request in flight
   // 'available'  = SP returned 200 → show Watch Fullscreen
   // 'unavailable'= SP returned 404 → show Not Available
-  const [checkState, setCheckState] = useState<SpCheckState>('checking');
+  const [checkState, setCheckState] = useState<SpCheckState>('available');
 
   const goFullscreenLandscape = useCallback(async () => {
     const tg = (window as any).Telegram?.WebApp;
