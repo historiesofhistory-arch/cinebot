@@ -315,6 +315,24 @@ video { display: block; }
   color: rgba(255,255,255,0.32);
   margin-top: 1px;
 }
+.cine-coming-soon-badge {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 7px 14px;
+  background: rgba(255,255,255,0.10);
+  border: 1px solid rgba(255,255,255,0.20);
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.02em;
+}
+.cine-splash-btn--alt {
+  background: rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.30);
+  margin-top: 8px;
+}
+.cine-splash-btn--alt:active { opacity: 0.75; }
 @media (orientation: portrait) {
   .cine-splash-content {
     flex-direction: column;

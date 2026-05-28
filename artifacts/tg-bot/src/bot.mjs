@@ -53,45 +53,57 @@ function cacheGet(key) {
 }
 function cacheSet(key, val) { _cache.set(key, { val, ts: Date.now() }); }
 
-// ── Streaming platform URLs ──────────────────────────────────────────────────
-const PROVIDER_URLS = {
-  'Netflix':              (t) => `https://www.netflix.com/search?q=${encodeURIComponent(t)}`,
-  'Amazon Prime Video':   (t) => `https://www.primevideo.com/search/ref=atv_nb_sr?phrase=${encodeURIComponent(t)}`,
-  'Prime Video':          (t) => `https://www.primevideo.com/search/ref=atv_nb_sr?phrase=${encodeURIComponent(t)}`,
-  'Disney Plus':          (t) => `https://www.disneyplus.com/search?q=${encodeURIComponent(t)}`,
-  'Disney+':              (t) => `https://www.disneyplus.com/search?q=${encodeURIComponent(t)}`,
-  'Hotstar':              (t) => `https://www.hotstar.com/in/search?q=${encodeURIComponent(t)}`,
-  'Disney+ Hotstar':      (t) => `https://www.hotstar.com/in/search?q=${encodeURIComponent(t)}`,
-  'JioCinema':            (t) => `https://www.jiocinema.com/search?query=${encodeURIComponent(t)}`,
-  'Apple TV Plus':        (t) => `https://tv.apple.com/search?term=${encodeURIComponent(t)}`,
-  'Apple TV+':            (t) => `https://tv.apple.com/search?term=${encodeURIComponent(t)}`,
-  'Hulu':                 (t) => `https://www.hulu.com/search?q=${encodeURIComponent(t)}`,
-  'Max':                  (t) => `https://www.max.com/search?q=${encodeURIComponent(t)}`,
-  'HBO Max':              (t) => `https://www.max.com/search?q=${encodeURIComponent(t)}`,
-  'Peacock':              (t) => `https://www.peacocktv.com/search?q=${encodeURIComponent(t)}`,
-  'Paramount Plus':       (t) => `https://www.paramountplus.com/search?q=${encodeURIComponent(t)}`,
-  'Paramount+':           (t) => `https://www.paramountplus.com/search?q=${encodeURIComponent(t)}`,
-  'SonyLIV':              (t) => `https://www.sonyliv.com/search?keyword=${encodeURIComponent(t)}`,
-  'ZEE5':                 (t) => `https://www.zee5.com/search?q=${encodeURIComponent(t)}`,
-  'Mubi':                 (_) => `https://mubi.com/en/films`,
-  'Tubi TV':              (t) => `https://tubitv.com/search/${encodeURIComponent(t)}`,
-  'Tubi':                 (t) => `https://tubitv.com/search/${encodeURIComponent(t)}`,
-  'Crunchyroll':          (t) => `https://www.crunchyroll.com/search?q=${encodeURIComponent(t)}`,
-  'Funimation':           (t) => `https://www.funimation.com/search/?q=${encodeURIComponent(t)}`,
-  'YouTube':              (t) => `https://www.youtube.com/results?search_query=${encodeURIComponent(t + ' full movie')}`,
-  'YouTube Premium':      (t) => `https://www.youtube.com/results?search_query=${encodeURIComponent(t)}`,
-  'Aha':                  (t) => `https://www.aha.video/search?q=${encodeURIComponent(t)}`,
-  'MX Player':            (t) => `https://www.mxplayer.in/search?q=${encodeURIComponent(t)}`,
-  'Voot':                 (t) => `https://www.voot.com/search/${encodeURIComponent(t)}`,
-};
+// ── IMDB free search (no API key) ────────────────────────────────────────────
+// Uses IMDB's undocumented suggestion API — same source as the search bar on imdb.com
+async function imdbSearch(query) {
+  const q = encodeURIComponent(query.toLowerCase().trim());
+  if (!q || q.length < 1) return [];
+  const letter = q[0];
+  const url = `https://v2.sg.media-imdb.com/suggests/${letter}/${q}.json`;
+  const key = `imdb_suggest:${q}`;
+  const cached = cacheGet(key);
+  if (cached) return cached;
+  try {
+    const res = await fetch(url, {
+      headers: { 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(8000),
+    });
+    const text = await res.text();
+    // Response is JSONP: imdb$inception({d:[...], q:'...', v:1})
+    const match = text.match(/\((\{.+\})\)$/s);
+    if (!match) return [];
+    const data = JSON.parse(match[1]);
+    const results = (data.d || []).filter(r => r.id?.startsWith('tt'));
+    cacheSet(key, results);
+    return results;
+  } catch (err) {
+    console.warn('[imdbSearch]', err?.message);
+    return [];
+  }
+}
 
-const PROVIDER_ICONS = {
-  'Netflix': '🔴', 'Amazon Prime Video': '🟡', 'Prime Video': '🟡',
-  'Disney Plus': '🔵', 'Disney+': '🔵', 'Disney+ Hotstar': '🔵', 'Hotstar': '🔵',
-  'Apple TV Plus': '⬛', 'Apple TV+': '⬛', 'Hulu': '🟢',
-  'Max': '🟣', 'HBO Max': '🟣', 'JioCinema': '🟠',
-  'SonyLIV': '🔵', 'ZEE5': '🟣', 'Crunchyroll': '🟠', 'YouTube': '🔴',
-};
+// Build keyboard from IMDB suggestion results
+// Each row: [{ text: '🎬 Title (year)', callback_data: 'imdb_movie_tt...' }]
+// filterType: 'all' | 'movie' | 'series'
+function buildImdbKeyboard(results, filterType = 'all') {
+  const rows = [];
+  for (const r of results) {
+    if (!r.id || !r.l) continue;
+    const qt = (r.q || '').toLowerCase();
+    const isTV = qt.includes('series') || qt.includes('mini') || qt === 'tv movie' && false;
+    // 'feature' = movie, 'tv series' = series, 'tv mini-series' = series
+    if (filterType === 'movie' && isTV) continue;
+    if (filterType === 'series' && !isTV) continue;
+    const mediaType = isTV ? 'tv' : 'movie';
+    const icon = isTV ? '📺' : '🎬';
+    const year = r.y ? ` (${r.y})` : '';
+    const cbData = `imdb_${mediaType}_${r.id}`;
+    if (cbData.length > 64) continue; // Telegram callback data limit
+    rows.push([{ text: `${icon} ${r.l}${year}`.substring(0, 60), callback_data: cbData }]);
+    if (rows.length >= 8) break;
+  }
+  return rows.length ? rows : null;
+}
 
 // ── TMDB helpers ─────────────────────────────────────────────────────────────
 async function tmdb(path, params = {}) {
@@ -181,137 +193,96 @@ function maybeInjectDidYouMean(query, items, keyboard) {
   return [suggestionRow, ...keyboard];
 }
 
-// ── Watch link helpers ────────────────────────────────────────────────────────
-function getBestRegion(providers) {
-  const results = providers?.results || {};
-  return results.US || results.IN || Object.values(results)[0] || null;
-}
-
-function buildWatchButtons(mediaType, id, title, providers, trailerKey, tmdbUrl, { imdbId = '', poster = '', year = '', overview = '' } = {}) {
+// ── Watch button builder (no paid providers — free watch only) ────────────────
+// infoUrl: IMDB or TMDB page link for the bottom row
+function buildWatchButtons(mediaType, title, trailerUrl, infoUrl, { imdbId = '', poster = '', year = '', overview = '' } = {}) {
   const buttons = [];
-
   const appParams = new URLSearchParams({
-    type: mediaType, id: String(id), title,
-    ...(year && { year }), ...(poster && { poster }), ...(imdbId && { imdb: imdbId }),
+    type: mediaType, title,
+    ...(year     && { year }),
+    ...(poster   && { poster }),
+    ...(imdbId   && { imdb: imdbId }),
     ...(overview && { overview: overview.slice(0, 150) }),
   });
   const appUrl = `${MINI_APP_BASE}?${appParams.toString()}`;
   buttons.push([{ text: '▶️  Watch Free — No Ads', url: appUrl }]);
 
-  const region = getBestRegion(providers);
-  const streamProviders = [...(region?.flatrate || []), ...(region?.free || []), ...(region?.ads || [])];
-  const seen = new Set();
-  const paidButtons = [];
-
-  for (const p of streamProviders) {
-    if (seen.has(p.provider_name)) continue;
-    seen.add(p.provider_name);
-    const urlFn = PROVIDER_URLS[p.provider_name];
-    if (urlFn) {
-      const icon = PROVIDER_ICONS[p.provider_name] || '▶️';
-      paidButtons.push({ text: `${icon} ${p.provider_name}`, url: urlFn(title) });
-    }
-    if (paidButtons.length >= 4) break;
-  }
-
-  if (paidButtons.length) {
-    for (let i = 0; i < paidButtons.length; i += 2) {
-      buttons.push(paidButtons.slice(i, i + 2));
-    }
-  }
-
   const bottomRow = [];
-  // trailerKey is now a full URL (YouTube search link — no API call needed)
-  if (trailerKey) bottomRow.push({ text: '🎞 Trailer', url: trailerKey });
-  bottomRow.push({ text: 'ℹ️ TMDB', url: tmdbUrl });
-  buttons.push(bottomRow);
-
+  if (trailerUrl) bottomRow.push({ text: '🎞 Trailer', url: trailerUrl });
+  if (infoUrl) {
+    const label = infoUrl.includes('imdb.com') ? 'ℹ️ IMDB' : 'ℹ️ TMDB';
+    bottomRow.push({ text: label, url: infoUrl });
+  }
+  if (bottomRow.length) buttons.push(bottomRow);
   return buttons;
 }
 
-function buildStreamingText(providers, title) {
-  const region = getBestRegion(providers);
-  if (!region) return `<a href="https://www.google.com/search?q=${encodeURIComponent(title + ' where to watch')}">Search where to watch</a>`;
-
-  const stream = region.flatrate?.map(p => {
-    const urlFn = PROVIDER_URLS[p.provider_name];
-    return urlFn ? `<a href="${urlFn(title)}">${h(p.provider_name)}</a>` : h(p.provider_name);
-  }) || [];
-  const rent = region.rent?.slice(0, 2).map(p => {
-    const urlFn = PROVIDER_URLS[p.provider_name];
-    return urlFn ? `<a href="${urlFn(title)}">${h(p.provider_name)}</a>` : h(p.provider_name);
-  }) || [];
-
-  const parts = [];
-  if (stream.length) parts.push(`Stream: ${stream.join(', ')}`);
-  if (rent.length && !stream.length) parts.push(`Rent/Buy: ${rent.join(', ')}`);
-  return parts.length
-    ? parts.join(' | ')
-    : `<a href="${region.link || `https://www.google.com/search?q=${encodeURIComponent(title + ' where to watch')}`}">Check streaming options</a>`;
-}
-
 // ── Message builders ──────────────────────────────────────────────────────────
-// cineMeta is optional data from Cinemeta (free) used to enrich cast/ratings.
-function buildMovieMessage(m, providers, cineMeta) {
-  const title    = m.title || m.original_title;
-  const year     = m.release_date ? m.release_date.substring(0, 4) : '';
-  const runtime  = m.runtime ? `${Math.floor(m.runtime / 60)}h ${m.runtime % 60}m`
-                 : (cineMeta?.runtime || 'N/A');
-  // Prefer IMDB rating from Cinemeta, fall back to TMDB vote
+// m = TMDB movie data (may be null for IMDB-sourced results)
+// cineMeta = Cinemeta metadata (free, no API key)
+function buildMovieMessage(m, cineMeta) {
+  const title    = m?.title || m?.original_title || cineMeta?.name || 'Unknown';
+  const year     = m?.release_date?.slice(0, 4) || String(cineMeta?.releaseInfo || '').slice(0, 4);
+  const runtime  = m?.runtime
+    ? `${Math.floor(m.runtime / 60)}h ${m.runtime % 60}m`
+    : (cineMeta?.runtime || 'N/A');
   const ratingNum = cineMeta?.imdbRating
     ? parseFloat(cineMeta.imdbRating)
-    : (m.vote_average || 0);
-  const ratingStr = ratingNum
-    ? `${ratingNum.toFixed(1)}/10 ${stars(ratingNum)}`
-    : 'N/A';
+    : (m?.vote_average || 0);
+  const ratingStr = ratingNum ? `${ratingNum.toFixed(1)}/10 ${stars(ratingNum)}` : 'N/A';
   const director  = cineMeta?.director?.slice(0, 2).join(', ') || '';
   const cast      = cineMeta?.cast?.slice(0, 3).join(', ') || '';
-  const overview  = truncate(cineMeta?.description || m.overview || 'No overview available.', 200);
-  const streamText = buildStreamingText(providers, title);
+  const overview  = truncate(cineMeta?.description || m?.overview || 'No overview available.', 200);
+  const genres    = cineMeta?.genres?.length
+    ? cineMeta.genres.slice(0, 3).join(', ')
+    : genreNames(m?.genres);
 
   let msg = `🎬 <b>${h(title)}</b>`;
-  if (m.title !== m.original_title) msg += ` <i>(${h(m.original_title)})</i>`;
+  if (m?.original_title && m.original_title !== m.title) msg += ` <i>(${h(m.original_title)})</i>`;
   if (year) msg += ` <i>(${year})</i>`;
   msg += '\n';
-  if (m.tagline) msg += `<i>${h(m.tagline)}</i>\n`;
+  if (m?.tagline) msg += `<i>${h(m.tagline)}</i>\n`;
   msg += '\n';
-  msg += `⭐ <b>${h(ratingStr)}</b>  ⏱ ${h(runtime)}  🎭 ${h(genreNames(m.genres))}\n`;
+  msg += `⭐ <b>${h(ratingStr)}</b>  ⏱ ${h(runtime)}  🎭 ${h(genres)}\n`;
   if (director) msg += `🎬 ${h(director)}`;
   if (cast)     msg += `  ·  👥 ${h(cast)}`;
   if (director || cast) msg += '\n';
-  msg += `\n📝 <i>${h(overview)}</i>\n`;
-  msg += `\n📺 <b>Watch on:</b> ${streamText}`;
+  msg += `\n📝 <i>${h(overview)}</i>`;
   return msg;
 }
 
-function buildSeriesMessage(s, providers, cineMeta) {
-  const title   = s.name || s.original_name;
-  const year    = s.first_air_date ? s.first_air_date.substring(0, 4) : '';
-  const seasons = s.number_of_seasons ? `${s.number_of_seasons}S` : '';
-  const eps     = s.number_of_episodes ? `${s.number_of_episodes} eps` : '';
+// s = TMDB series data (may be null for IMDB-sourced results)
+function buildSeriesMessage(s, cineMeta) {
+  const title   = s?.name || s?.original_name || cineMeta?.name || 'Unknown';
+  const year    = s?.first_air_date?.slice(0, 4) || String(cineMeta?.releaseInfo || '').slice(0, 4);
+  const seasons = s?.number_of_seasons ? `${s.number_of_seasons}S` : '';
+  const eps     = s?.number_of_episodes ? `${s.number_of_episodes} eps` : '';
   const ratingNum = cineMeta?.imdbRating
     ? parseFloat(cineMeta.imdbRating)
-    : (s.vote_average || 0);
+    : (s?.vote_average || 0);
   const ratingStr = ratingNum ? `${ratingNum.toFixed(1)}/10 ${stars(ratingNum)}` : 'N/A';
   const creator = cineMeta?.director?.slice(0, 2).join(', ')
-                || s.created_by?.slice(0, 2).map(c => c.name).join(', ') || '';
+                || s?.created_by?.slice(0, 2).map(c => c.name).join(', ') || '';
   const cast    = cineMeta?.cast?.slice(0, 3).join(', ') || '';
-  const overview = truncate(cineMeta?.description || s.overview || 'No overview available.', 200);
-  const streamText = buildStreamingText(providers, title);
+  const overview = truncate(cineMeta?.description || s?.overview || 'No overview available.', 200);
+  const genres   = cineMeta?.genres?.length
+    ? cineMeta.genres.slice(0, 3).join(', ')
+    : genreNames(s?.genres);
 
   let msg = `📺 <b>${h(title)}</b>`;
-  if (s.name !== s.original_name) msg += ` <i>(${h(s.original_name)})</i>`;
+  if (s?.original_name && s.original_name !== s.name) msg += ` <i>(${h(s.original_name)})</i>`;
   if (year) msg += ` <i>(${year})</i>`;
   msg += '\n';
-  if (s.tagline) msg += `<i>${h(s.tagline)}</i>\n`;
+  if (s?.tagline) msg += `<i>${h(s.tagline)}</i>\n`;
   msg += '\n';
-  const meta = [seasons, eps, s.status].filter(Boolean).join('  ·  ');
-  msg += `⭐ <b>${h(ratingStr)}</b>  📦 ${h(meta)}  🎭 ${h(genreNames(s.genres))}\n`;
+  const meta = [seasons, eps, s?.status].filter(Boolean).join('  ·  ');
+  msg += `⭐ <b>${h(ratingStr)}</b>`;
+  if (meta) msg += `  📦 ${h(meta)}`;
+  msg += `  🎭 ${h(genres)}\n`;
   if (creator) msg += `✍️ ${h(creator)}`;
   if (cast)    msg += `  ·  👥 ${h(cast)}`;
   if (creator || cast) msg += '\n';
-  msg += `\n📝 <i>${h(overview)}</i>\n`;
-  msg += `\n📺 <b>Watch on:</b> ${streamText}`;
+  msg += `\n📝 <i>${h(overview)}</i>`;
   return msg;
 }
 
@@ -477,11 +448,11 @@ bot.command('help', async (ctx) => {
     `/popular_series — Top web series\n` +
     `/genres — Browse by genre\n\n` +
     `<b>Each result shows:</b>\n` +
-    `• Direct links to Netflix, Prime, Hotstar &amp; more\n` +
+    `• IMDB rating &amp; runtime\n` +
     `• Full plot overview &amp; cast\n` +
-    `• Rating &amp; runtime\n` +
-    `• Trailer on YouTube\n\n` +
-    `<i>No downloads — stream directly!</i>`,
+    `• Trailer on YouTube\n` +
+    `• Free watch link — no ads\n\n` +
+    `<i>In groups: mention me — @BotName Inception</i>`,
     { parse_mode: 'HTML' }
   );
 });
@@ -494,17 +465,10 @@ bot.command('movie', async (ctx) => {
   }
   const waitMsg = await safeSend(chatId, `🔍 Searching for movie: <b>${h(query)}</b>...`);
   try {
-    const data = await tmdb('/search/movie', { query });
-    const results = data.results || [];
-    let keyboard = buildResultKeyboard(results, 'movie');
+    const results = await imdbSearch(query);
+    const keyboard = buildImdbKeyboard(results, 'movie');
     if (!keyboard) {
       return safeEdit(chatId, waitMsg?.message_id, `❌ No movies found for "<b>${h(query)}</b>". Try a different spelling.`);
-    }
-    const topTitle = results[0]?.title || results[0]?.original_title || '';
-    if (!fuzzyMatch(query, topTitle)) {
-      const year = results[0]?.release_date ? ` (${results[0].release_date.substring(0, 4)})` : '';
-      const suggRow = [{ text: `🤔 Did you mean: ${topTitle}${year}?`, callback_data: `movie_${results[0].id}` }];
-      keyboard = [suggRow, ...keyboard];
     }
     await safeEdit(chatId, waitMsg?.message_id, `🎬 <b>Movie results for "${h(query)}":</b>\n\nTap a title for details &amp; watch links:`, {
       reply_markup: { inline_keyboard: keyboard }
@@ -523,17 +487,10 @@ bot.command('series', async (ctx) => {
   }
   const waitMsg = await safeSend(chatId, `🔍 Searching for series: <b>${h(query)}</b>...`);
   try {
-    const data = await tmdb('/search/tv', { query });
-    const results = data.results || [];
-    let keyboard = buildResultKeyboard(results, 'tv');
+    const results = await imdbSearch(query);
+    const keyboard = buildImdbKeyboard(results, 'series');
     if (!keyboard) {
       return safeEdit(chatId, waitMsg?.message_id, `❌ No series found for "<b>${h(query)}</b>". Try a different spelling.`);
-    }
-    const topTitle = results[0]?.name || results[0]?.original_name || '';
-    if (!fuzzyMatch(query, topTitle)) {
-      const year = results[0]?.first_air_date ? ` (${results[0].first_air_date.substring(0, 4)})` : '';
-      const suggRow = [{ text: `🤔 Did you mean: ${topTitle}${year}?`, callback_data: `tv_${results[0].id}` }];
-      keyboard = [suggRow, ...keyboard];
     }
     await safeEdit(chatId, waitMsg?.message_id, `📺 <b>Series results for "${h(query)}":</b>\n\nTap a title for details &amp; watch links:`, {
       reply_markup: { inline_keyboard: keyboard }
@@ -552,13 +509,11 @@ bot.command('search', async (ctx) => {
   }
   const waitMsg = await safeSend(chatId, `🔎 Searching: <b>${h(query)}</b>...`);
   try {
-    const data = await tmdb('/search/multi', { query });
-    const items = (data.results || []).filter(r => r.media_type === 'movie' || r.media_type === 'tv');
-    let keyboard = buildMultiResultKeyboard(items);
+    const results = await imdbSearch(query);
+    const keyboard = buildImdbKeyboard(results, 'all');
     if (!keyboard) {
       return safeEdit(chatId, waitMsg?.message_id, `❌ Nothing found for "<b>${h(query)}</b>".`);
     }
-    keyboard = maybeInjectDidYouMean(query, items, keyboard);
     await safeEdit(chatId, waitMsg?.message_id, `🔎 <b>Results for "${h(query)}":</b>\n🎬 = Movie  📺 = Series\n\nTap for details &amp; watch links:`, {
       reply_markup: { inline_keyboard: keyboard }
     });
@@ -587,25 +542,86 @@ bot.on('callback_query:data', async (ctx) => {
   if (data === 'quick_series')   { handlePopularSeries(chatId); return; }
   if (data === 'quick_genres')   { handleGenres(chatId); return; }
 
-  // Movie detail
+  // ── IMDB-sourced movie detail (0 TMDB calls — Cinemeta only) ──────────────
+  if (data.startsWith('imdb_movie_')) {
+    const imdbId = data.slice('imdb_movie_'.length);
+    const waitMsg = await safeSend(chatId, '⏳ Fetching movie details...');
+    try {
+      const cineMeta = await cinemeta('movie', imdbId);
+      if (!cineMeta) throw new Error('No Cinemeta data');
+      const title = cineMeta.name || 'Unknown';
+      const year  = String(cineMeta.releaseInfo || '').slice(0, 4);
+      const trailerUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(title + ' ' + year + ' official trailer')}`;
+      const imdbUrl = `https://www.imdb.com/title/${imdbId}`;
+      const text = buildMovieMessage(null, cineMeta);
+      const keyboard = buildWatchButtons('movie', title, trailerUrl, imdbUrl, {
+        imdbId,
+        poster: cineMeta.poster || '',
+        year,
+        overview: cineMeta.description || '',
+      });
+      try { await bot.api.deleteMessage(chatId, waitMsg?.message_id); } catch (_) {}
+      const imgUrl = cineMeta.poster || null;
+      if (imgUrl) {
+        await safePhoto(chatId, imgUrl, text, { reply_markup: { inline_keyboard: keyboard } });
+      } else {
+        await safeSend(chatId, text, { reply_markup: { inline_keyboard: keyboard } });
+      }
+    } catch (err) {
+      console.error('imdb_movie detail error:', err?.message);
+      await safeEdit(chatId, waitMsg?.message_id, '⚠️ Could not load movie details. Please try again.');
+    }
+    return;
+  }
+
+  // ── IMDB-sourced TV detail (0 TMDB calls — Cinemeta only) ─────────────────
+  if (data.startsWith('imdb_tv_')) {
+    const imdbId = data.slice('imdb_tv_'.length);
+    const waitMsg = await safeSend(chatId, '⏳ Fetching series details...');
+    try {
+      const cineMeta = await cinemeta('series', imdbId);
+      if (!cineMeta) throw new Error('No Cinemeta data');
+      const title = cineMeta.name || 'Unknown';
+      const year  = String(cineMeta.releaseInfo || '').slice(0, 4);
+      const trailerUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(title + ' ' + year + ' official trailer')}`;
+      const imdbUrl = `https://www.imdb.com/title/${imdbId}`;
+      const text = buildSeriesMessage(null, cineMeta);
+      const keyboard = buildWatchButtons('tv', title, trailerUrl, imdbUrl, {
+        imdbId,
+        poster: cineMeta.poster || '',
+        year,
+        overview: cineMeta.description || '',
+      });
+      try { await bot.api.deleteMessage(chatId, waitMsg?.message_id); } catch (_) {}
+      const imgUrl = cineMeta.poster || null;
+      if (imgUrl) {
+        await safePhoto(chatId, imgUrl, text, { reply_markup: { inline_keyboard: keyboard } });
+      } else {
+        await safeSend(chatId, text, { reply_markup: { inline_keyboard: keyboard } });
+      }
+    } catch (err) {
+      console.error('imdb_tv detail error:', err?.message);
+      await safeEdit(chatId, waitMsg?.message_id, '⚠️ Could not load series details. Please try again.');
+    }
+    return;
+  }
+
+  // ── TMDB-sourced movie detail (trending/popular/genre — 1 TMDB call) ───────
   if (data.startsWith('movie_')) {
     const id = data.slice('movie_'.length);
-    const waitMsg = await safeSend(chatId, '⏳ Fetching movie details & watch links...');
+    const waitMsg = await safeSend(chatId, '⏳ Fetching movie details...');
     try {
-      // 2 TMDB calls instead of 4 — Cinemeta fills cast/ratings for free
-      const [movie, providers] = await Promise.all([
-        tmdb(`/movie/${id}`),
-        tmdb(`/movie/${id}/watch/providers`),
-      ]);
+      const movie = await tmdb(`/movie/${id}`);
       const imdbId = movie.imdb_id || '';
       const cineMeta = await cinemeta('movie', imdbId);
       const title = movie.title || movie.original_title;
       const year  = movie.release_date?.slice(0, 4) || '';
-      // YouTube trailer search link (no API call)
       const trailerUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(title + ' ' + year + ' official trailer')}`;
-      const tmdbUrl = `https://www.themoviedb.org/movie/${id}`;
-      const text = buildMovieMessage(movie, providers, cineMeta);
-      const keyboard = buildWatchButtons('movie', id, title, providers, trailerUrl, tmdbUrl, {
+      const infoUrl = imdbId
+        ? `https://www.imdb.com/title/${imdbId}`
+        : `https://www.themoviedb.org/movie/${id}`;
+      const text = buildMovieMessage(movie, cineMeta);
+      const keyboard = buildWatchButtons('movie', title, trailerUrl, infoUrl, {
         imdbId,
         poster: movie.poster_path || '',
         year,
@@ -628,12 +644,11 @@ bot.on('callback_query:data', async (ctx) => {
   // TV/Series detail
   if (data.startsWith('tv_')) {
     const id = data.slice('tv_'.length);
-    const waitMsg = await safeSend(chatId, '⏳ Fetching series details & watch links...');
+    const waitMsg = await safeSend(chatId, '⏳ Fetching series details...');
     try {
-      // 3 TMDB calls instead of 5 — Cinemeta fills cast/ratings for free
-      const [series, providers, externalIds] = await Promise.all([
+      // 2 TMDB calls — Cinemeta fills cast/ratings for free, providers removed
+      const [series, externalIds] = await Promise.all([
         tmdb(`/tv/${id}`),
-        tmdb(`/tv/${id}/watch/providers`),
         tmdb(`/tv/${id}/external_ids`),
       ]);
       const imdbId = externalIds?.imdb_id || '';
@@ -641,9 +656,11 @@ bot.on('callback_query:data', async (ctx) => {
       const title = series.name || series.original_name;
       const year  = series.first_air_date?.slice(0, 4) || '';
       const trailerUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(title + ' ' + year + ' official trailer')}`;
-      const tmdbUrl = `https://www.themoviedb.org/tv/${id}`;
-      const text = buildSeriesMessage(series, providers, cineMeta);
-      const keyboard = buildWatchButtons('tv', id, title, providers, trailerUrl, tmdbUrl, {
+      const infoUrl = imdbId
+        ? `https://www.imdb.com/title/${imdbId}`
+        : `https://www.themoviedb.org/tv/${id}`;
+      const text = buildSeriesMessage(series, cineMeta);
+      const keyboard = buildWatchButtons('tv', title, trailerUrl, infoUrl, {
         imdbId,
         poster: series.poster_path || '',
         year,
@@ -717,14 +734,12 @@ bot.on('message:text', async (ctx) => {
 
   const waitMsg = await safeSend(chatId, `🔎 Searching for <b>${h(query)}</b>...`);
   try {
-    const data = await tmdb('/search/multi', { query });
-    const items = (data.results || []).filter(r => r.media_type === 'movie' || r.media_type === 'tv');
-    let keyboard = buildMultiResultKeyboard(items);
+    const results = await imdbSearch(query);
+    const keyboard = buildImdbKeyboard(results, 'all');
     if (!keyboard) {
       return safeEdit(chatId, waitMsg?.message_id,
         `❌ Nothing found for "<b>${h(query)}</b>".\nTry a different spelling or use /movie / /series.`);
     }
-    keyboard = maybeInjectDidYouMean(query, items, keyboard);
     await safeEdit(chatId, waitMsg?.message_id,
       `🔎 <b>Results for "${h(query)}":</b>\n🎬 = Movie  📺 = Series\n\nTap for details &amp; watch links:`, {
       reply_markup: { inline_keyboard: keyboard }

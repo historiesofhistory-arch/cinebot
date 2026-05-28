@@ -255,6 +255,8 @@ function IframePlayer({
   const [ready, setReady] = useState(false);
   const [overlayVisible, setOverlayVisible] = useState(true);
   const overlayTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // comingSoon = SP returned "Video Not Found" — show info card instead of watch button
+  const [comingSoon, setComingSoon] = useState(false);
 
   const goFullscreenLandscape = useCallback(async () => {
     const tg = (window as any).Telegram?.WebApp;
@@ -269,8 +271,8 @@ function IframePlayer({
     setReady(true);
   }, []);
 
-  // Reset splash when src changes (episode switch)
-  useEffect(() => { setReady(false); }, [src]);
+  // Reset splash (and coming-soon flag) when src changes (episode switch)
+  useEffect(() => { setReady(false); setComingSoon(false); }, [src]);
 
   // Re-show splash if user exits fullscreen or rotates to portrait
   useEffect(() => {
@@ -302,32 +304,41 @@ function IframePlayer({
     return () => { if (overlayTimer.current) clearTimeout(overlayTimer.current); };
   }, [src, ready]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-detect "Video Not Found" from proxied SP player and silently switch
+  // Detect "Video Not Found" injected by sp-proxy → go back to splash with Coming Soon card
   useEffect(() => {
     const handler = (e: MessageEvent) => {
       if (e.data?.type === 'cinebot_video_not_found') {
-        onSwitchPlayer();
+        setReady(false);
+        setComingSoon(true);
       }
     };
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
-  }, [onSwitchPlayer]);
+  }, []);
 
-  // ── Splash screen — shown before user taps Go Fullscreen ─────────────────
+  // ── Splash screen — shown before user taps Watch, or when Coming Soon ───────
   if (!ready) {
+    // Resolve poster — can be a TMDB path (/abc.jpg) or a full URL (Cinemeta)
+    const posterSrc = poster
+      ? poster.startsWith('http') ? poster : `https://image.tmdb.org/t/p/w342${poster}`
+      : null;
+    const bgSrc = poster
+      ? poster.startsWith('http') ? poster : `https://image.tmdb.org/t/p/w780${poster}`
+      : null;
+
     return (
       <div className="cine-portrait-overlay">
-        {poster && (
+        {bgSrc && (
           <div
             className="cine-portrait-bg"
-            style={{ backgroundImage: `url(https://image.tmdb.org/t/p/w780${poster})` }}
+            style={{ backgroundImage: `url(${bgSrc})` }}
           />
         )}
         <div className="cine-splash-content">
-          {poster && (
+          {posterSrc && (
             <img
               className="cine-splash-poster"
-              src={`https://image.tmdb.org/t/p/w342${poster}`}
+              src={posterSrc}
               alt={title}
             />
           )}
@@ -339,16 +350,29 @@ function IframePlayer({
               {isTV && <span>S{currentSeason} · E{currentEpisode}</span>}
             </div>
             {overview ? <p className="cine-splash-overview">{overview}</p> : null}
-            <button className="cine-splash-btn" onClick={goFullscreenLandscape}>
-              <span className="cine-splash-play-wrap">
-                <span className="cine-splash-play-ring" />
-                <svg className="cine-splash-play-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                  <polygon points="5,3 19,12 5,21"/>
-                </svg>
-              </span>
-              Watch Fullscreen
-            </button>
-            <p className="cine-splash-hint">Rotates to landscape · Works best fullscreen</p>
+
+            {comingSoon ? (
+              <>
+                <div className="cine-coming-soon-badge">🎬 Not Available Yet</div>
+                <p className="cine-splash-hint">This title isn't streaming on this source right now.</p>
+                <button className="cine-splash-btn cine-splash-btn--alt" onClick={onSwitchPlayer}>
+                  Try Another Source
+                </button>
+              </>
+            ) : (
+              <>
+                <button className="cine-splash-btn" onClick={goFullscreenLandscape}>
+                  <span className="cine-splash-play-wrap">
+                    <span className="cine-splash-play-ring" />
+                    <svg className="cine-splash-play-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                      <polygon points="5,3 19,12 5,21"/>
+                    </svg>
+                  </span>
+                  Watch Fullscreen
+                </button>
+                <p className="cine-splash-hint">Rotates to landscape · Works best fullscreen</p>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -1022,15 +1046,18 @@ export default function App() {
     });
   }, [isTV, tmdbId, currentSeason]);
 
-  // ── Build iframe URL (SP player via proxy for error detection) ───────────
+  // ── Build iframe URL — routed through sp-proxy so error detection works ─────
+  // The proxy injects a detection script that postMessages 'cinebot_video_not_found'
+  // when "Video Not Found" text appears. Video stream still loads from the user's
+  // browser (Indian IP) because the base-tag in the proxied HTML keeps all
+  // requests going to the original domain.
 
   const buildIframeSrc = useCallback((season: number, episode: number): string | null => {
     if (!imdbId) return null;
     const prefix = isTV ? 's' : 'f';
-    let direct = `https://gemma416okl.com/play/${prefix}${imdbId}?d=allmovielandapp.app`;
-    if (isTV) direct += `&s=${season}&e=${episode}`;
-    // Load directly from user's browser — server proxy blocks streaming sites
-    return direct;
+    let spUrl = `https://gemma416okl.com/play/${prefix}${imdbId}?d=allmovielandapp.app`;
+    if (isTV) spUrl += `&s=${season}&e=${episode}`;
+    return `${API_BASE}/sp-proxy?url=${encodeURIComponent(spUrl)}`;
   }, [imdbId, isTV]);
 
   // ── Switch to sflix (2nd fallback iframe) ────────────────────────────────
